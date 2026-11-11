@@ -532,7 +532,7 @@ function readStoredAppearance(): Appearance {
   } catch {
     /* fall through to default */
   }
-  return { skin_id: 'leaf-cloak', theme: 'system' };
+  return { skin_id: 'night-letter', theme: 'system' };
 }
 
 export function createMockIpc(): IpcClient {

@@ -597,45 +597,45 @@ async function runAppearanceFlow(browser) {
   await sp.waitForSelector('.skin');
   const cards = await sp.locator('.skin').evaluateAll((els) => els.map((e) => ({ id: e.dataset.skinId, disabled: e.getAttribute('aria-disabled'), text: e.innerText.replace(/\n/g, ' ') })));
   check('six skin cards, all selectable (assets complete)', cards.length === 6 && cards.every((c) => c.disabled === 'false'), JSON.stringify(cards.map((c) => c.id + ':' + c.disabled)));
-  check('default skin is leaf-cloak and marked 目前使用', /目前使用/.test(cards.find((c) => c.id === 'leaf-cloak').text));
+  check('default skin is night-letter and marked 目前使用', /目前使用/.test(cards.find((c) => c.id === 'night-letter').text));
   await shot(sp, 'settings-skins-all-six-light');
   const skinOf = (pg) => pg.evaluate(() => document.documentElement.getAttribute('data-skin') + '/' + document.documentElement.getAttribute('data-family'));
-  check('floating starts with leaf-cloak', (await skinOf(float)).startsWith('leaf-cloak'), await skinOf(float));
+  check('floating starts with night-letter', (await skinOf(float)).startsWith('night-letter'), await skinOf(float));
 
   // preview does not save / change other windows
-  await sp.locator('.skin[data-skin-id="night-letter"]').click();
+  await sp.locator('.skin[data-skin-id="leaf-cloak"]').click();
   await sp.waitForTimeout(300);
-  check('preview does not change floating window', (await skinOf(float)).startsWith('leaf-cloak'));
-  check('preview does not change the settings window itself', (await skinOf(sp)).startsWith('leaf-cloak'));
+  check('preview does not change floating window', (await skinOf(float)).startsWith('night-letter'));
+  check('preview does not change the settings window itself', (await skinOf(sp)).startsWith('night-letter'));
   const stored = await sp.evaluate(() => localStorage.getItem('luma-mock-appearance'));
   check('preview did not persist', stored === null, String(stored));
-  await shot(sp, 'settings-skins-preview-night-letter-light');
+  await shot(sp, 'settings-skins-preview-leaf-cloak-light');
 
   // snapshot of unrelated state before apply
   const beforeTasks = await panel.evaluate(() => document.body.innerText.length);
   await sp.getByRole('button', { name: '套用造型' }).click();
-  await float.waitForFunction(() => document.documentElement.getAttribute('data-skin') === 'night-letter', null, { timeout: 5000 });
-  await panel.waitForFunction(() => document.documentElement.getAttribute('data-family') === 'night-voyage', null, { timeout: 5000 });
-  check('apply updates floating entry live', (await skinOf(float)) === 'night-letter/night-voyage');
-  check('apply updates panel avatar live (img src is the night-letter avatar)', await panel.evaluate(() => /avatar/.test(document.querySelector('.shell__sprite img')?.getAttribute('src') ?? '') && document.querySelector('.shell__sprite img').dataset.skin === 'night-letter'));
+  await float.waitForFunction(() => document.documentElement.getAttribute('data-skin') === 'leaf-cloak', null, { timeout: 5000 });
+  await panel.waitForFunction(() => document.documentElement.getAttribute('data-family') === 'quiet-desk', null, { timeout: 5000 });
+  check('apply updates floating entry live', (await skinOf(float)) === 'leaf-cloak/quiet-desk');
+  check('apply updates panel avatar live (panel header shows the leaf-cloak flat art)', await panel.evaluate(() => { const i = document.querySelector('.shell__sprite img'); return !!i && /\.svg$/.test(i.getAttribute('src') ?? '') && i.dataset.skin === 'leaf-cloak'; })); // leaf-cloak's avatar.svg is byte-identical to idle.svg, so the bundler emits one file named after idle
   check('theme untouched by applying a skin (stays light)', await panel.evaluate(() => document.documentElement.getAttribute('data-theme')) === 'light');
   const afterStored = JSON.parse(await sp.evaluate(() => localStorage.getItem('luma-mock-appearance')));
-  check('persisted skin_id', afterStored.skin_id === 'night-letter' && afterStored.theme === 'system', JSON.stringify(afterStored));
+  check('persisted skin_id', afterStored.skin_id === 'leaf-cloak' && afterStored.theme === 'system', JSON.stringify(afterStored));
   await sp.waitForTimeout(400);
-  await shot(sp, 'settings-skins-applied-night-letter-light');
-  await shot(panel, 'panel-after-apply-night-letter-light');
+  await shot(sp, 'settings-skins-applied-leaf-cloak-light');
+  await shot(panel, 'panel-after-apply-leaf-cloak-light');
   void beforeTasks;
 
   // reload a window: stored choice is restored from the backend
   await float.reload();
   await float.waitForSelector('[data-testid="float-expanded"]');
   await float.waitForTimeout(400);
-  check('stored skin survives reload', (await skinOf(float)).startsWith('night-letter'));
+  check('stored skin survives reload', (await skinOf(float)).startsWith('leaf-cloak'));
 
   // restore default
   await sp.getByRole('button', { name: '還原預設' }).click();
-  await float.waitForFunction(() => document.documentElement.getAttribute('data-skin') === 'leaf-cloak', null, { timeout: 5000 });
-  check('還原預設 returns to leaf-cloak and quiet-desk family', (await skinOf(float)) === 'leaf-cloak/quiet-desk');
+  await float.waitForFunction(() => document.documentElement.getAttribute('data-skin') === 'night-letter', null, { timeout: 5000 });
+  check('還原預設 returns to night-letter and night-voyage family', (await skinOf(float)) === 'night-letter/night-voyage');
   await ctx.close();
 
   // fallback: unknown stored id
@@ -645,7 +645,7 @@ async function runAppearanceFlow(browser) {
   watch(s2, 'fallback');
   await s2.goto(`${BASE}/settings.html?theme=light&tab=appearance`);
   await s2.waitForSelector('[data-testid="skin-fallback"]', { timeout: 5000 });
-  check('unknown stored skin id: default shown + visible inline notice', (await skinOf(s2)).startsWith('leaf-cloak'));
+  check('unknown stored skin id: default shown + visible inline notice', (await skinOf(s2)).startsWith('night-letter'));
   await s2.waitForTimeout(300);
   await shot(s2, 'settings-skins-fallback-light');
   const still = await s2.evaluate(() => JSON.parse(localStorage.getItem('luma-mock-appearance')).skin_id);

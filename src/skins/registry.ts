@@ -13,7 +13,7 @@ import { SKIN_STATES, type SkinState } from './states';
 import { FAMILY_TOKENS_READY } from './family';
 import { parseLayered, type ImageScale } from './layered/schema';
 
-export const DEFAULT_SKIN_ID = 'leaf-cloak';
+export const DEFAULT_SKIN_ID = 'night-letter';
 
 /** ---- the registry: one line per skin ---- */
 export const SKINS: readonly SkinDeclaration[] = [

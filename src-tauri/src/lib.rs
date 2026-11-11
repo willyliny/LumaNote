@@ -75,7 +75,8 @@ fn app_info() -> AppInfo {
 /// Opens (or focuses) the `main` or `settings` window.
 ///
 /// `async` on purpose: creating a window from a synchronous command can deadlock on Windows.
-/// The floating window is only allowed to open `main`; this is checked here in addition to the
+/// The floating window may open `main` and `settings` (the wheel has a settings item) and nothing
+/// else; this is checked here in addition to the
 /// capability files because the capability system cannot restrict arguments.
 #[tauri::command]
 async fn open_window(
@@ -83,10 +84,10 @@ async fn open_window(
     app: AppHandle,
     label: String,
 ) -> Result<(), CommandError> {
-    if caller.label() == LABEL_FLOATING && label != LABEL_MAIN {
+    if caller.label() == LABEL_FLOATING && label != LABEL_MAIN && label != LABEL_SETTINGS {
         return Err(CommandError::new(
             "permission_denied",
-            "the floating window may only open the main panel",
+            "the floating window may only open the main panel or the settings window",
         ));
     }
     match label.as_str() {
