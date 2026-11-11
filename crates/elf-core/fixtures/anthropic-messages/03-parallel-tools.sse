@@ -1,0 +1,49 @@
+: fixture: anthropic-messages/03-parallel-tools.sse
+: protocol: Anthropic Messages API, streaming, two client tool calls in one assistant turn (parallel tool use)
+: provenance: CONSTRUCTED by R2 from the documented schema. Parallel tool use = several tool_use content blocks in one
+:   assistant message (https://platform.claude.com/docs/en/agents-and-tools/tool-use/parallel-tool-use, checked 2026-11-11);
+:   event framing from https://platform.claude.com/docs/en/build-with-claude/streaming (checked 2026-11-11).
+: note: the docs say each block's index matches its position in the final content array. Whether two tool_use blocks can
+:   be interleaved (block 2 deltas before block 1 stop) is NOT documented; this fixture keeps them sequential. The adapter
+:   must still key accumulation by index, not by "current block".
+: note: the usage cache fields in message_start are constructed values in the documented field names.
+: expected ModelEvents: ToolCallReady(toolu_01AAAAAAAAAAAAAAAAAAAAAAAA, get_weather, {"location":"Taipei"}),
+:   ToolCallReady(toolu_01BBBBBBBBBBBBBBBBBBBBBBBB, get_time, {"timezone":"Asia/Taipei"}), Usage, Completed(stop=tool_use).
+:   Both results must later be sent back in ONE user message, tool_result blocks first.
+
+event: message_start
+data: {"type":"message_start","message":{"id":"msg_01PARALLELTOOLSFIXTURE0001","type":"message","role":"assistant","model":"claude-sonnet-5-5","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":512,"cache_creation_input_tokens":0,"cache_read_input_tokens":2048,"output_tokens":1}}}
+
+event: content_block_start
+data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_01AAAAAAAAAAAAAAAAAAAAAAAA","name":"get_weather","input":{}}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":""}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"locati"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"on\": \"Taipei\"}"}}
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":0}
+
+event: content_block_start
+data: {"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"toolu_01BBBBBBBBBBBBBBBBBBBBBBBB","name":"get_time","input":{}}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\"timezone\":"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":" \"Asia/Taipei\"}"}}
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":1}
+
+event: message_delta
+data: {"type":"message_delta","delta":{"stop_reason":"tool_use","stop_sequence":null},"usage":{"output_tokens":74}}
+
+event: message_stop
+data: {"type":"message_stop"}
+

@@ -6,6 +6,40 @@ use serde::{Deserialize, Serialize};
 use super::{get_opt_ts, get_ts, Store};
 use crate::schema::{ts_to_sql, ElfError, GrantId, Result, TaskId, Timestamp};
 
+/// Who a grant applies to. Stored explicitly in `grants.scope`; never inferred from other
+/// columns.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GrantScope {
+    /// Applies only to requests made by the grant's `source_task`. Used for the implied
+    /// grants the orchestrator creates for a task and for one-shot approvals. Ends when
+    /// the task reaches a terminal state.
+    Task,
+    /// Created through an explicit user action in settings; applies to every task until
+    /// revoked or expired.
+    UserStanding,
+}
+
+impl GrantScope {
+    /// Stable spelling stored in `grants.scope`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            GrantScope::Task => "task",
+            GrantScope::UserStanding => "user_standing",
+        }
+    }
+
+    fn parse(s: &str) -> Result<Self> {
+        match s {
+            "task" => Ok(GrantScope::Task),
+            "user_standing" => Ok(GrantScope::UserStanding),
+            other => Err(ElfError::Storage {
+                message: format!("unknown grant scope {other:?}"),
+            }),
+        }
+    }
+}
+
 /// A stored grant.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Grant {
@@ -23,8 +57,12 @@ pub struct Grant {
     pub max_uses: Option<u32>,
     /// Uses consumed so far.
     pub used_count: u32,
-    /// Task whose approval created the grant.
+    /// Task that created the grant (the only task it applies to when `scope` is
+    /// [`GrantScope::Task`]; provenance only for a user-standing grant). Becomes `None`
+    /// if that task row is deleted, which leaves a task-scoped grant matching nobody.
     pub source_task: Option<TaskId>,
+    /// Who the grant applies to.
+    pub scope: GrantScope,
     /// Revocation time.
     pub revoked_at: Option<Timestamp>,
     /// Creation time.
@@ -32,6 +70,15 @@ pub struct Grant {
 }
 
 impl Grant {
+    /// Whether a request from `task` may use this grant at all: a user-standing grant
+    /// serves every task, a task-scoped grant only its own source task.
+    pub fn applies_to(&self, task: &TaskId) -> bool {
+        match self.scope {
+            GrantScope::UserStanding => true,
+            GrantScope::Task => self.source_task.as_ref() == Some(task),
+        }
+    }
+
     /// True if the grant can still be used at `now`.
     pub fn is_active(&self, now: Timestamp) -> bool {
         self.revoked_at.is_none()
@@ -53,12 +100,15 @@ pub struct NewGrant {
     pub expires_at: Option<Timestamp>,
     /// Optional use limit.
     pub max_uses: Option<u32>,
-    /// Task whose approval created the grant.
+    /// Task that creates the grant. Required for [`GrantScope::Task`].
     pub source_task: Option<TaskId>,
+    /// Who the grant applies to. Use [`GrantScope::UserStanding`] only for grants the
+    /// user created explicitly in settings.
+    pub scope: GrantScope,
 }
 
 pub(crate) const GRANT_COLS: &str =
-    "id, action, resource_scope, arguments_hash, expires_at, max_uses, used_count, source_task, revoked_at, created_at";
+    "id, action, resource_scope, arguments_hash, expires_at, max_uses, used_count, source_task, revoked_at, created_at, scope";
 
 fn grant_from_row(r: &Row<'_>) -> rusqlite::Result<Grant> {
     Ok(Grant {
@@ -74,6 +124,7 @@ fn grant_from_row(r: &Row<'_>) -> rusqlite::Result<Grant> {
         source_task: r.get::<_, Option<String>>(7)?.map(TaskId::from_string),
         revoked_at: get_opt_ts(r, 8)?,
         created_at: get_ts(r, 9)?,
+        scope: super::conv(10, GrantScope::parse(&r.get::<_, String>(10)?))?,
     })
 }
 
@@ -84,6 +135,65 @@ pub(crate) fn grants_for_action(conn: &Connection, action: &str) -> Result<Vec<G
     ))?;
     let rows = stmt.query_map([action], grant_from_row)?;
     Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+}
+
+/// Inserts a grant row on `conn` (usually inside a transaction) after validating that a
+/// task-scoped grant names its task.
+pub(crate) fn insert_grant_row(
+    conn: &Connection,
+    new: &NewGrant,
+    now: Timestamp,
+) -> Result<GrantId> {
+    if new.scope == GrantScope::Task && new.source_task.is_none() {
+        return Err(ElfError::invalid_input(
+            "a task-scoped grant needs a source task",
+        ));
+    }
+    let id = GrantId::new();
+    conn.execute(
+        "INSERT INTO grants (id, action, resource_scope, arguments_hash, expires_at, max_uses, source_task, scope, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        params![
+            id.as_str(),
+            new.action,
+            new.resource_scope,
+            new.arguments_hash,
+            new.expires_at.as_ref().map(ts_to_sql),
+            new.max_uses,
+            new.source_task.as_ref().map(TaskId::as_str),
+            new.scope.as_str(),
+            ts_to_sql(&now)
+        ],
+    )?;
+    Ok(id)
+}
+
+/// Revokes every still-live task-scoped grant of `task` (idempotent). Returns how many
+/// were revoked. Called inside the transaction that moves a task to a terminal state.
+pub(crate) fn revoke_task_scoped(
+    conn: &Connection,
+    task: &TaskId,
+    now: Timestamp,
+) -> Result<usize> {
+    Ok(conn.execute(
+        "UPDATE grants SET revoked_at = ?2
+         WHERE source_task = ?1 AND scope = 'task' AND revoked_at IS NULL",
+        params![task.as_str(), ts_to_sql(&now)],
+    )?)
+}
+
+/// Revokes live task-scoped grants of every task already in a terminal state (crash
+/// repair; normally the terminal transition did it already).
+pub(crate) fn revoke_task_scoped_of_finished_tasks(
+    conn: &Connection,
+    now: Timestamp,
+) -> Result<usize> {
+    Ok(conn.execute(
+        "UPDATE grants SET revoked_at = ?1
+         WHERE scope = 'task' AND revoked_at IS NULL
+           AND source_task IN (SELECT id FROM tasks WHERE status IN ('completed','failed','cancelled'))",
+        params![ts_to_sql(&now)],
+    )?)
 }
 
 /// Atomically consumes one use if the grant is still active; returns whether it did.
@@ -99,23 +209,9 @@ pub(crate) fn consume(conn: &Connection, id: &GrantId, now: Timestamp) -> Result
 }
 
 impl Store {
-    /// Stores a new grant.
+    /// Stores a new grant. A [`GrantScope::Task`] grant must name its `source_task`.
     pub fn insert_grant(&mut self, new: &NewGrant, now: Timestamp) -> Result<Grant> {
-        let id = GrantId::new();
-        self.conn.execute(
-            "INSERT INTO grants (id, action, resource_scope, arguments_hash, expires_at, max_uses, source_task, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-            params![
-                id.as_str(),
-                new.action,
-                new.resource_scope,
-                new.arguments_hash,
-                new.expires_at.as_ref().map(ts_to_sql),
-                new.max_uses,
-                new.source_task.as_ref().map(TaskId::as_str),
-                ts_to_sql(&now)
-            ],
-        )?;
+        let id = insert_grant_row(&self.conn, new, now)?;
         self.get_grant(&id)
     }
 
@@ -159,5 +255,165 @@ impl Store {
             return Err(ElfError::invalid_input(format!("unknown grant {id}")));
         }
         self.get_grant(id)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    //! Migration 0003 on a database that already holds real rows from 0001 + 0002.
+
+    use super::*;
+    use crate::ports::fakes::FakeClock;
+    use crate::storage::{Store, MIGRATIONS};
+
+    const T0: &str = "2026-11-10T08:00:00.000000Z";
+    const T1: &str = "2026-11-11T09:30:00.000000Z";
+
+    fn exec(s: &Store, sql: &str) {
+        s.conn.execute_batch(sql).unwrap();
+    }
+
+    fn count(s: &Store, sql: &str) -> i64 {
+        s.conn.query_row(sql, [], |r| r.get(0)).unwrap()
+    }
+
+    #[test]
+    fn upgrade_from_0002_keeps_every_row_and_classifies_grants_conservatively() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("elf.db");
+        let clock = FakeClock::at_default_start();
+        {
+            let old = Store::open_with(&path, &clock, &MIGRATIONS[..2]).unwrap();
+            assert_eq!(old.schema_version().unwrap(), 2);
+            exec(
+                &old,
+                &format!(
+                    "INSERT INTO tasks (id, intent, status, created_at, updated_at) VALUES
+                       ('t-run', 'running task', 'running', '{T0}', '{T0}'),
+                       ('t-done', 'finished task', 'completed', '{T0}', '{T1}'),
+                       ('t-bad', 'failed task', 'failed', '{T0}', '{T1}');
+                     INSERT INTO task_steps (id, task_id, seq, tool, side_effect, status, idempotency_key, started_at, result_json)
+                       VALUES ('s1', 't-done', 1, 'read_file', 'none', 'succeeded', 'k1', '{T0}', '{{\"ok\":true}}');
+                     -- g-implied: per-task standing grant of a running task
+                     -- g-oneshot-done: unspent one-shot left behind by a finished task
+                     -- g-oneshot-bad: same for a failed task, already revoked at 'T0'
+                     -- g-user: no source task (created in settings)
+                     INSERT INTO grants (id, action, resource_scope, arguments_hash, expires_at, max_uses, used_count, source_task, revoked_at, created_at) VALUES
+                       ('g-implied', 'read', '/data/in', NULL, NULL, NULL, 3, 't-run', NULL, '{T0}'),
+                       ('g-oneshot-done', 'send', 'mail:a@x.com', 'abc', NULL, 1, 0, 't-done', NULL, '{T0}'),
+                       ('g-oneshot-bad', 'send', 'mail:b@x.com', 'def', NULL, 1, 1, 't-bad', '{T0}', '{T0}'),
+                       ('g-user', 'read', '/home/docs', NULL, '2027-01-01T00:00:00.000000Z', NULL, 7, NULL, NULL, '{T0}');
+                     INSERT INTO approvals (id, task_id, tool_call_id, tool, action, resource, arguments_json, arguments_hash, preview, reason, status, created_at, responded_at, grant_id)
+                       VALUES ('ap1', 't-done', 'c1', 'send_mail', 'send', 'mail:a@x.com', '{{}}', 'abc', 'p', 'no_matching_grant', 'approved', '{T0}', '{T0}', 'g-oneshot-done');
+                     INSERT INTO schedules (id, task_template, timezone, next_run_at, recurrence, misfire_policy, enabled) VALUES
+                       ('sch1', '{{\"v\":1}}', 'Asia/Taipei', '2026-11-12T01:00:00.000000Z', 'FREQ=DAILY', 'coalesce', 1),
+                       ('sch2', '{{\"v\":1}}', 'UTC', NULL, NULL, 'skip', 0);
+                     INSERT INTO deliveries (id, schedule_id, occurrence_key, status, delivered_at) VALUES
+                       ('d1', 'sch1', '2026-11-10T01:00:00.000000Z', 'delivered', '{T0}'),
+                       ('d2', 'sch1', '2026-11-11T01:00:00.000000Z', 'pending', NULL);"
+                ),
+            );
+        }
+
+        let s = Store::open(&path, &clock).unwrap();
+        assert_eq!(s.schema_version().unwrap(), 3);
+
+        // nothing lost
+        assert_eq!(count(&s, "SELECT COUNT(*) FROM tasks"), 3);
+        assert_eq!(count(&s, "SELECT COUNT(*) FROM task_steps"), 1);
+        assert_eq!(count(&s, "SELECT COUNT(*) FROM grants"), 4);
+        assert_eq!(count(&s, "SELECT COUNT(*) FROM approvals"), 1);
+        assert_eq!(count(&s, "SELECT COUNT(*) FROM schedules"), 2);
+        assert_eq!(count(&s, "SELECT COUNT(*) FROM deliveries"), 2);
+        assert_eq!(
+            count(&s, "SELECT COUNT(*) FROM pragma_foreign_key_check"),
+            0
+        );
+
+        // grants: scope by source_task, finished tasks' live grants revoked at the task's
+        // last update, everything else (including counters and expiry) untouched
+        let g = |id: &str| s.get_grant(&GrantId::from_string(id)).unwrap();
+        let implied = g("g-implied");
+        assert_eq!(implied.scope, GrantScope::Task);
+        assert_eq!((implied.used_count, implied.revoked_at), (3, None));
+        let done = g("g-oneshot-done");
+        assert_eq!(done.scope, GrantScope::Task);
+        assert_eq!(
+            done.revoked_at.map(|t| ts_to_sql(&t)),
+            Some(T1.to_owned()),
+            "unspent one-shot of a finished task is no longer live"
+        );
+        assert_eq!(
+            (done.max_uses, done.arguments_hash.as_deref()),
+            (Some(1), Some("abc"))
+        );
+        let bad = g("g-oneshot-bad");
+        assert_eq!(bad.scope, GrantScope::Task);
+        assert_eq!(
+            bad.revoked_at.map(|t| ts_to_sql(&t)),
+            Some(T0.to_owned()),
+            "first revocation time kept"
+        );
+        let user = g("g-user");
+        assert_eq!(user.scope, GrantScope::UserStanding);
+        assert_eq!(user.used_count, 7);
+        assert!(user.revoked_at.is_none() && user.expires_at.is_some());
+
+        // approvals still point at their grant; steps got an empty consumption record
+        let ap = s
+            .get_approval(&crate::schema::ApprovalId::from_string("ap1"))
+            .unwrap();
+        assert_eq!(
+            ap.grant_id.as_ref().map(GrantId::as_str),
+            Some("g-oneshot-done")
+        );
+        let step = s
+            .get_step(&crate::schema::StepId::from_string("s1"))
+            .unwrap();
+        assert_eq!(step.consumed_grant_id, None);
+        assert_eq!(step.result, Some(serde_json::json!({"ok": true})));
+
+        // schedules and their history: live, readable, nothing marked deleted
+        let rows = s.list_schedule_rows(false).unwrap();
+        assert_eq!(rows.len(), 2);
+        assert!(rows.iter().all(|r| r.deleted_at.is_none()));
+        assert_eq!(rows[0].recurrence.as_deref(), Some("FREQ=DAILY"));
+        assert_eq!(
+            s.list_delivery_rows(Some("sch1"), None, 10).unwrap().len(),
+            2
+        );
+
+        // the new constraints are live: scope values are checked, new grants default narrow
+        assert!(s
+            .conn
+            .execute(
+                "INSERT INTO grants (id, action, resource_scope, scope, created_at) VALUES ('x', 'read', '/', 'everyone', ?1)",
+                [T0]
+            )
+            .is_err());
+        s.conn
+            .execute(
+                "INSERT INTO grants (id, action, resource_scope, created_at) VALUES ('y', 'read', '/', ?1)",
+                [T0],
+            )
+            .unwrap();
+        assert_eq!(g("y").scope, GrantScope::Task);
+
+        // reopening is a no-op
+        drop(s);
+        let s = Store::open(&path, &clock).unwrap();
+        assert_eq!(s.schema_version().unwrap(), 3);
+        assert_eq!(count(&s, "SELECT COUNT(*) FROM grants"), 5);
+    }
+
+    #[test]
+    fn upgrade_works_on_a_database_with_no_rows_too() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("empty.db");
+        let clock = FakeClock::at_default_start();
+        drop(Store::open_with(&path, &clock, &MIGRATIONS[..2]).unwrap());
+        let s = Store::open(&path, &clock).unwrap();
+        assert_eq!(s.schema_version().unwrap(), 3);
+        assert!(s.list_grants().unwrap().is_empty());
     }
 }

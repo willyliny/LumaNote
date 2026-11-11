@@ -4,7 +4,7 @@
 //!
 //! # Storage mapping
 //!
-//! No schema change is needed: the existing `schedules`/`deliveries` columns are used as
+//! The existing `schedules`/`deliveries` columns are used as
 //! `next_run_at` (UTC), `timezone` (IANA), `recurrence` (RRULE subset, see [`recurrence`]),
 //! `misfire_policy` ([`MisfirePolicy`]), `enabled`, and `task_template` (JSON holding title,
 //! body, the user's original rule, action kind, usefulness window, payload). A delivery's
@@ -35,6 +35,15 @@
 //! re-evaluation rather than by trusting elapsed monotonic time. Schedules carry their own
 //! IANA timezone and never read the machine's timezone, so changing the machine timezone
 //! does not move any schedule.
+//!
+//! # Deletion
+//!
+//! Deleting a schedule is a soft delete (`schedules.deleted_at`, migration 0003): handbook
+//! section 9 requires trigger records to be kept. A deleted schedule is excluded from
+//! listings (unless asked for), from every engine query and from update/enable/snooze; its
+//! `pending` notifications are cancelled in the same transaction; the rest of its
+//! `deliveries` stay queryable and the `(schedule_id, occurrence_key)` constraint still
+//! applies.
 
 mod engine;
 mod model;

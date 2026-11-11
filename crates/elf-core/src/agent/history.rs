@@ -4,7 +4,7 @@ use std::collections::HashSet;
 
 use serde_json::Value;
 
-use crate::model::{Message, MessagePart, Role};
+use crate::model::{Message, MessagePart, ModelOrigin, Role};
 use crate::schema::ToolCallId;
 use crate::storage::StoredMessage;
 
@@ -18,12 +18,17 @@ pub(crate) struct PendingCall {
 
 /// The model-facing messages: everything stored for the conversation, in order. The
 /// product's local history is the only source; no provider conversation ID is involved.
-pub(crate) fn to_messages(history: &[StoredMessage]) -> Vec<Message> {
+/// Provider-opaque state (thinking signatures, ...) is kept only where it was produced by
+/// `origin`; for any other model it is dropped here, before an adapter ever sees it.
+pub(crate) fn to_messages(history: &[StoredMessage], origin: &ModelOrigin) -> Vec<Message> {
     history
         .iter()
-        .map(|m| Message {
-            role: m.role,
-            parts: m.parts.clone(),
+        .filter_map(|m| {
+            Message {
+                role: m.role,
+                parts: m.parts.clone(),
+            }
+            .for_origin(origin)
         })
         .collect()
 }

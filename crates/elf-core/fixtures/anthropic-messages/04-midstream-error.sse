@@ -1,0 +1,34 @@
+: fixture: anthropic-messages/04-midstream-error.sse
+: protocol: Anthropic Messages API, streaming; HTTP status was 200, then an error event arrives mid-stream
+: provenance: CONSTRUCTED by R2. The final "error" event payload is COPIED VERBATIM from
+:   https://platform.claude.com/docs/en/build-with-claude/streaming ("Error events", checked 2026-11-11).
+:   The preceding events are constructed from the documented schema.
+: doc facts: overloaded_error "would normally correspond to an HTTP 529 in a non-streaming context";
+:   errors can occur after the API returns 200 (https://platform.claude.com/docs/en/api/errors, checked 2026-11-11).
+: note: there is no message_delta / message_stop after the error; the server ends the stream.
+: note: the tool_use block at index 1 never reaches content_block_stop. It MUST NOT produce ToolCallReady.
+: expected ModelEvents: TextDelta("I'll look that up"), ToolCallDelta(...) (optional, UI only),
+:   Failed(kind=overloaded, retryable=true, partial_output_emitted=true, provider_type="overloaded_error").
+:   No Usage event is guaranteed: usage is unknown, not zero.
+
+event: message_start
+data: {"type":"message_start","message":{"id":"msg_01MIDSTREAMERRORFIXTURE01","type":"message","role":"assistant","model":"claude-sonnet-5-5","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":120,"output_tokens":1}}}
+
+event: content_block_start
+data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"I'll look that up"}}
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":0}
+
+event: content_block_start
+data: {"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"toolu_01CUTOFFCUTOFFCUTOFFCUTOF","name":"read_file","input":{}}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\"path\": \"C:/Us"}}
+
+event: error
+data: {"type": "error", "error": {"type": "overloaded_error", "message": "Overloaded"}}
+

@@ -9,11 +9,11 @@ use tokio_util::sync::CancellationToken;
 use super::history::{ends_with_final_answer, pending_calls, to_messages, PendingCall};
 use super::turn::{TurnEnd, TurnParams};
 use super::{AgentEventKind, ModelBinding, Orchestrator};
-use crate::model::{FinishReason, MessagePart, ModelRequest, Role};
+use crate::model::{MessagePart, ModelOrigin, ModelRequest, Role, StopReason};
 use crate::policy::{self, ActionRequest, ApprovalReason, Decision, Resource};
 use crate::schema::{
-    hash_arguments, ConversationId, ElfError, EvidenceRef, RequestId, Result, StepId, TaskId,
-    ToolCallId, Trust,
+    hash_arguments, ConversationId, ElfError, EvidenceRef, Result, StepId, TaskId, ToolCallId,
+    Trust,
 };
 use crate::storage::approvals::{ApprovalStatus, NewApproval};
 use crate::storage::{Approval, StepOutcome, StoredMessage, Task, TaskEvent, TaskStep};
@@ -406,15 +406,19 @@ impl Orchestrator {
             chrono::Duration::try_seconds(i64::try_from(ctx.limits.max_duration_secs).ok()?)
                 .and_then(|d| s.checked_add_signed(d))
         });
+        let origin = ModelOrigin::from_profile(&ctx.model.profile);
         let request = ModelRequest {
-            model_profile_id: ctx.model.profile.id.clone(),
-            instructions: self.config.task_instructions.clone(),
-            messages: to_messages(history),
             tools,
-            output_contract: None,
             output_budget: self.config.output_budget,
             deadline,
-            request_id: RequestId::new(),
+            parallel_tool_calls: self.config.parallel_tool_calls,
+            reasoning: self.config.reasoning.clone(),
+            idle_timeout: Some(self.config.model_idle_timeout),
+            ..ModelRequest::new(
+                ctx.model.profile.id.clone(),
+                self.config.task_instructions.clone(),
+                to_messages(history, &origin),
+            )
         };
         let end = self
             .stream_turn(TurnParams {
@@ -442,38 +446,68 @@ impl Orchestrator {
                 Ok(Flow::Stop(outcome))
             }
             TurnEnd::Done(out) => {
-                if out.finish == FinishReason::ContentFilter && out.calls.is_empty() {
-                    return Ok(Flow::Stop(
-                        self.fail(&ctx.task_id, "model output was blocked by the provider")?,
-                    ));
+                // Truncated output is never a success: nothing from such a turn is stored
+                // or executed (a cut-off call cannot be trusted to be what the model meant).
+                match &out.stop {
+                    StopReason::MaxTokens => {
+                        return Ok(Flow::Stop(self.fail(
+                            &ctx.task_id,
+                            "model_output_truncated: the model hit its output limit",
+                        )?))
+                    }
+                    StopReason::ContextExceeded => {
+                        return Ok(Flow::Stop(self.fail(
+                            &ctx.task_id,
+                            "model_context_exceeded: the conversation does not fit the model's context window",
+                        )?))
+                    }
+                    StopReason::ContentFilter | StopReason::Refusal if out.calls.is_empty() => {
+                        let why = if out.stop == StopReason::Refusal {
+                            "model refused the request"
+                        } else {
+                            "model output was blocked by the provider"
+                        };
+                        return Ok(Flow::Stop(self.fail(&ctx.task_id, why)?));
+                    }
+                    _ => {}
                 }
-                let mut parts = Vec::new();
-                if !out.text.is_empty() {
-                    parts.push(MessagePart::Text { text: out.text });
-                }
-                for c in &out.calls {
-                    parts.push(MessagePart::ToolCall {
-                        id: c.id.clone(),
-                        name: c.name.clone(),
-                        arguments: c.arguments.clone(),
-                    });
-                }
-                if !parts.is_empty() {
+                if !out.parts.is_empty() {
                     let now = self.clock.now_utc();
                     self.store.with(|s| {
                         s.append_message(
                             &ctx.conversation_id,
                             Some(&ctx.task_id),
                             Role::Assistant,
-                            &parts,
+                            &out.parts,
                             None,
                             now,
                         )
                     })?;
                 }
+                // Calls the adapter rejected are answered to the model right away as error
+                // results (nothing is executed). Each counts against the tool-call limit, so
+                // a model that keeps sending broken calls ends in a pause, not a loop.
+                for r in &out.rejected {
+                    let call = PendingCall {
+                        id: r.id.clone(),
+                        name: r.name.clone().unwrap_or_else(|| "unknown".to_owned()),
+                        arguments: json!({}),
+                    };
+                    let result = CallResult::error(&ElfError::invalid_input(format!(
+                        "tool call rejected, nothing was executed: {}",
+                        r.reason
+                    )));
+                    self.record_result(ctx, &call, &result)?;
+                }
                 if out.calls.is_empty() {
-                    // a final answer, or an empty reply: either way the run is over
-                    return Ok(Flow::Stop(self.begin_verification(&ctx.task_id)?));
+                    if out.rejected.is_empty() {
+                        // a final answer, or an empty reply: either way the run is over
+                        return Ok(Flow::Stop(self.begin_verification(&ctx.task_id)?));
+                    }
+                    let task = self.store.with(|s| s.get_task(&ctx.task_id))?;
+                    if let Some(reason) = self.limit_hit(&task, &ctx.limits, true) {
+                        return Ok(Flow::Stop(self.pause(&ctx.task_id, reason)?));
+                    }
                 }
                 Ok(Flow::Next)
             }
@@ -661,16 +695,32 @@ impl Orchestrator {
             }
         }
 
-        // step 2: policy (every execution re-checks; one-shot approvals are consumed here)
+        // step 2: policy (every execution re-checks). Consuming a grant use and writing the
+        // write-ahead step record (step 3) happen in ONE transaction, so a crash can never
+        // spend a one-shot approval without leaving a step that recovery can reason about.
+        let side = tool.side_effect();
+        let redacted = tool.redact_args(&call.arguments).to_string();
         let request = ActionRequest {
             task_id: ctx.task_id.clone(),
             action: tool.required_action(),
             resource: resource.clone(),
             arguments_hash: hash_arguments(&call.arguments),
         };
-        let decision = self
-            .store
-            .with(|s| policy::evaluate(s, &request, &*self.clock))?;
+        let reopen_id = reopen.as_ref().map(|st| st.id.clone());
+        let (decision, started) = self.store.with(|s| {
+            policy::authorize_and_begin_step(
+                s,
+                &request,
+                &*self.clock,
+                &policy::StepStart {
+                    tool: &call.name,
+                    args_redacted: Some(&redacted),
+                    side_effect: side,
+                    idempotency_key: Some(&key),
+                    reopen: reopen_id.as_ref(),
+                },
+            )
+        })?;
         match decision {
             Decision::Allow { .. } => {}
             Decision::Deny { reason } => {
@@ -700,8 +750,14 @@ impl Orchestrator {
             }
         }
 
-        // steps 3 and 4: write-ahead record, execute with timeout and cancellation, verify
-        self.execute_step(ctx, call, tool, resource, tctx, key, reopen)
+        // steps 3 and 4: the write-ahead record exists already; execute with timeout and
+        // cancellation, verify
+        let Some(step) = started else {
+            return Err(ElfError::Storage {
+                message: "policy allowed the call but no step was recorded".into(),
+            });
+        };
+        self.execute_step(ctx, call, tool, resource, tctx, step)
             .await
     }
 
@@ -762,7 +818,6 @@ impl Orchestrator {
         })
     }
 
-    #[allow(clippy::too_many_arguments)]
     async fn execute_step(
         &self,
         ctx: &RunCtx<'_>,
@@ -770,23 +825,10 @@ impl Orchestrator {
         tool: Arc<dyn Tool>,
         _resource: Resource,
         tctx: ToolContext,
-        key: String,
-        reopen: Option<TaskStep>,
+        step: TaskStep,
     ) -> Result<Flow> {
         let side = tool.side_effect();
         let now = self.clock.now_utc();
-        let redacted = tool.redact_args(&call.arguments).to_string();
-        let step = self.store.with(|s| match &reopen {
-            Some(old) => s.reopen_step(&old.id, now),
-            None => s.begin_step(
-                &ctx.task_id,
-                &call.name,
-                Some(&redacted),
-                side,
-                Some(&key),
-                now,
-            ),
-        })?;
         self.store.with(|s| {
             s.append_task_event(
                 &ctx.task_id,

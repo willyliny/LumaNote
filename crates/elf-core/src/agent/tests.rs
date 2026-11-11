@@ -12,14 +12,16 @@ use tokio_util::sync::CancellationToken;
 use super::*;
 use crate::model::mock::{MockAdapter, ScriptItem, ScriptStep};
 use crate::model::{
-    FinishReason, MessagePart, ModelCapabilities, ModelProfile, Role, Support, Usage,
+    MessagePart, ModelCapabilities, ModelProfile, Role, StopReason, Support, Usage,
 };
 use crate::policy::{Action, Resource};
 use crate::ports::fakes::FakeClock;
 use crate::schema::{sha256_hex, ElfError, Result, ToolCallId, Trust};
-use crate::storage::{NewGrant, Store, StoredMessage};
+use crate::storage::{GrantScope, NewGrant, Store, StoredMessage};
 use crate::task::{SideEffect, StepStatus};
 use crate::tools::{Tool, ToolContext, ToolOutput};
+
+mod model_tests;
 
 // ---------------------------------------------------------------------------------------
 // test tools
@@ -276,6 +278,7 @@ impl Harness {
                         expires_at: None,
                         max_uses: None,
                         source_task: None,
+                        scope: GrantScope::UserStanding,
                     },
                     now,
                 )
@@ -329,6 +332,11 @@ fn label(k: &AgentEventKind) -> String {
         AgentEventKind::ApprovalRequired { tool, .. } => format!("approval:{tool}"),
         AgentEventKind::ArtifactReady { .. } => "artifact".into(),
         AgentEventKind::Usage { .. } => "usage".into(),
+        AgentEventKind::ReasoningDelta { text } => format!("reasoning:{text}"),
+        AgentEventKind::ModelStarted { .. } => "model_started".into(),
+        AgentEventKind::ToolCallRejected { tool, .. } => {
+            format!("rejected:{}", tool.as_deref().unwrap_or("?"))
+        }
     }
 }
 
@@ -379,14 +387,14 @@ fn call(id: &str, name: &str, args: Value) -> Vec<ScriptItem> {
 
 fn calls(cs: Vec<Vec<ScriptItem>>) -> Vec<ScriptItem> {
     let mut v: Vec<ScriptItem> = cs.into_iter().flatten().collect();
-    v.push(ScriptStep::Complete(FinishReason::ToolCalls).into());
+    v.push(ScriptStep::Complete(StopReason::ToolUse).into());
     v
 }
 
 fn say(text: &str) -> Vec<ScriptItem> {
     vec![
         ScriptStep::Text(text.into()).into(),
-        ScriptStep::Complete(FinishReason::Stop).into(),
+        ScriptStep::Complete(StopReason::EndTurn).into(),
     ]
 }
 
@@ -995,7 +1003,7 @@ async fn time_limit_pauses_on_the_injected_clock_and_resume_starts_a_new_window(
     let slow_turn = vec![
         ScriptStep::Delay(Duration::from_secs(700)).into(),
         ScriptStep::Text("late".into()).into(),
-        ScriptStep::Complete(FinishReason::Stop).into(),
+        ScriptStep::Complete(StopReason::EndTurn).into(),
     ];
     let (m, adapter) = model(
         &h,
@@ -1105,7 +1113,7 @@ async fn cancel_mid_stream_stops_the_stream() {
         vec![vec![
             ScriptStep::Delay(Duration::from_secs(60)).into(),
             ScriptStep::Text("x".into()).into(),
-            ScriptStep::Complete(FinishReason::Stop).into(),
+            ScriptStep::Complete(StopReason::EndTurn).into(),
         ]],
     );
     let (out, ()) = futures::join!(h.orch.run(&id, &m), async {
@@ -1152,15 +1160,23 @@ fn cancel_works_from_every_non_terminal_state() {
 // ---------------------------------------------------------------------------------------
 // model stream failures
 
+/// A turn that fails; with non-empty `text` it fails *after* output was delivered.
 fn failing_turn(text: &str, retryable: bool) -> Vec<ScriptItem> {
-    vec![
-        ScriptStep::Text(text.into()).into(),
-        ScriptStep::Fail(ElfError::ExternalFailure {
-            message: "connection reset".into(),
-            retryable,
-        })
+    let mut v: Vec<ScriptItem> = Vec::new();
+    if !text.is_empty() {
+        v.push(ScriptStep::Text(text.into()).into());
+    }
+    v.push(
+        ScriptStep::Fail(
+            ElfError::ExternalFailure {
+                message: "connection reset".into(),
+                retryable,
+            }
+            .into(),
+        )
         .into(),
-    ]
+    );
+    v
 }
 
 #[tokio::test]
@@ -1171,7 +1187,7 @@ async fn stream_failure_is_retried_without_repeating_tool_steps() {
         &h,
         vec![
             calls(vec![call("c1", "create_todos", todos_args("only once"))]),
-            failing_turn("par", true),
+            failing_turn("", true),
             say("all good"),
         ],
     );
@@ -1212,8 +1228,8 @@ async fn exhausted_retries_pause_and_a_later_retry_reuses_saved_results() {
         &h,
         vec![
             calls(vec![call("c1", "create_todos", args.clone())]),
-            failing_turn("a", true),
-            failing_turn("b", true),
+            failing_turn("", true),
+            failing_turn("", true),
             // after the pause the model asks for the very same write again, under a new call id
             calls(vec![call("c9", "create_todos", args.clone())]),
             say("all good"),
@@ -1661,7 +1677,7 @@ async fn chat_streams_and_stores_messages_without_creating_a_task() {
                     ..Usage::default()
                 })
                 .into(),
-                ScriptStep::Complete(FinishReason::Stop).into(),
+                ScriptStep::Complete(StopReason::EndTurn).into(),
             ],
             say("Because of X."),
         ],
@@ -1677,7 +1693,7 @@ async fn chat_streams_and_stores_messages_without_creating_a_task() {
         .await
         .unwrap();
     assert_eq!(r.text, "Hello there");
-    assert_eq!(r.finish, FinishReason::Stop);
+    assert_eq!(r.finish, StopReason::EndTurn);
     let r2 = h
         .orch
         .chat(Some(&r.conversation_id), "why?", &m, &cancel)
@@ -1771,7 +1787,7 @@ async fn chat_can_be_cancelled() {
         &h,
         vec![vec![
             ScriptStep::Delay(Duration::from_secs(60)).into(),
-            ScriptStep::Complete(FinishReason::Stop).into(),
+            ScriptStep::Complete(StopReason::EndTurn).into(),
         ]],
     );
     let cancel = CancellationToken::new();
@@ -1793,7 +1809,7 @@ async fn concurrent_or_finished_runs_are_refused() {
         &h,
         vec![vec![
             ScriptStep::Delay(Duration::from_secs(60)).into(),
-            ScriptStep::Complete(FinishReason::Stop).into(),
+            ScriptStep::Complete(StopReason::EndTurn).into(),
         ]],
     );
     let (first, second) = futures::join!(h.orch.run(&id, &m), async {
@@ -1892,4 +1908,140 @@ fn null_sink_and_event_serialisation() {
         ),
         (json!(1), json!(3), json!("paused"))
     );
+}
+
+// ---------------------------------------------------------------------------------------
+// grant scope and grant consumption (work package C6)
+
+#[test]
+fn implied_grants_of_one_task_do_not_serve_a_concurrent_task() {
+    let h = Harness::new();
+    let a = h.task("task a", Value::Null);
+    let b = h
+        .orch
+        .create_task(NewTaskRequest {
+            intent: "task b".into(),
+            scope: TaskScope {
+                output_dirs: vec![h.outside.clone()],
+                read_dirs: vec![h.outside.clone()],
+                allowed_tools: None,
+            },
+            ..NewTaskRequest::default()
+        })
+        .unwrap()
+        .id;
+    // every grant the hand-over created is task-scoped
+    let grants = h.orch.store().with(|s| s.list_grants()).unwrap();
+    assert_eq!(grants.len(), 6);
+    assert!(grants
+        .iter()
+        .all(|g| g.scope == GrantScope::Task && g.source_task.is_some()));
+
+    let check = |task: &TaskId, action: Action, resource: Resource| {
+        let req = crate::policy::ActionRequest {
+            task_id: task.clone(),
+            action,
+            resource,
+            arguments_hash: "h".into(),
+        };
+        h.orch
+            .store()
+            .with(|s| crate::policy::evaluate(s, &req, &h.clock))
+            .unwrap()
+    };
+    let read_a = Resource::Path(h.shared.join("notes.md"));
+    let write_a = Resource::Path(h.out.join("report.md"));
+    let todos = || Resource::Other("local:todos".into());
+    let todo_action = Action::Other("create_todos".into());
+
+    use crate::policy::Decision;
+    assert!(matches!(
+        check(&a, Action::Read, read_a.clone()),
+        Decision::Allow { .. }
+    ));
+    assert!(matches!(
+        check(&a, Action::Write, write_a.clone()),
+        Decision::Allow { .. }
+    ));
+    // B can use its own...
+    assert!(matches!(
+        check(&b, Action::Read, Resource::Path(h.outside.join("x.txt"))),
+        Decision::Allow { .. }
+    ));
+    assert!(matches!(
+        check(&b, todo_action.clone(), todos()),
+        Decision::Allow { .. }
+    ));
+    // ...but not A's
+    assert!(matches!(
+        check(&b, Action::Read, read_a),
+        Decision::NeedsApproval { .. }
+    ));
+    assert!(matches!(
+        check(&b, Action::Write, write_a),
+        Decision::NeedsApproval { .. }
+    ));
+    // and A not B's
+    assert!(matches!(
+        check(&a, Action::Read, Resource::Path(h.outside.join("x.txt"))),
+        Decision::NeedsApproval { .. }
+    ));
+}
+
+#[tokio::test]
+async fn crash_after_the_approval_was_consumed_resumes_without_asking_again() {
+    let (slow, runs) = TestTool::new("slow", Behaviour::Slow(Duration::from_secs(300)));
+    let slow = slow.with(|t| t.timeout = Duration::from_secs(400));
+    let h = Harness::with(vec![slow], config());
+    // makes the tool visible to the model without covering the call it will make
+    h.grant("test_tool", "local:elsewhere");
+    let id = h.task("x", Value::Null);
+    let (m, _) = model(
+        &h,
+        vec![calls(vec![call("c", "slow", json!({}))]), say("done")],
+    );
+    let out = h.orch.run(&id, &m).await.unwrap();
+    let RunOutcome::AwaitingUser { approval } = out else {
+        panic!("{out:?}")
+    };
+    let answered = h.orch.respond_to_approval(&approval.id, true).unwrap();
+    let grant_id = answered.grant_id.clone().unwrap();
+    let used = |h: &Harness| {
+        h.orch
+            .store()
+            .with(|s| s.get_grant(&grant_id))
+            .unwrap()
+            .used_count
+    };
+    assert_eq!(used(&h), 0);
+
+    // the process dies while the tool runs (after consumption and the step record)
+    tokio::select! {
+        _ = h.orch.run(&id, &m) => panic!("run must still be waiting for the tool"),
+        () = settle() => {}
+    }
+    let step = h.steps(&id).remove(0);
+    assert_eq!(step.status, StepStatus::Started);
+    assert_eq!(step.consumed_grant_id.as_ref(), Some(&grant_id));
+    assert_eq!(used(&h), 1);
+
+    let rec = h
+        .orch
+        .store()
+        .with(|s| s.recover_after_restart(&h.clock))
+        .unwrap();
+    assert_eq!(rec[0].to, TaskStatus::Paused);
+    assert_eq!(used(&h), 0, "the unfinished attempt gave its use back");
+
+    let (out, ()) = futures::join!(h.orch.run(&id, &m), async {
+        settle().await;
+        h.clock.advance(Duration::from_secs(300));
+    });
+    assert!(matches!(out.unwrap(), RunOutcome::Completed { .. }));
+    assert_eq!(runs.load(Ordering::SeqCst), 2);
+    let approvals = h.orch.store().with(|s| s.list_approvals(&id)).unwrap();
+    assert_eq!(approvals.len(), 1, "the user was not asked a second time");
+    assert_eq!(used(&h), 1);
+    // task finished: its grants (including the spent one-shot) are no longer live
+    assert!(h.task_grants_revoked(&id));
 }

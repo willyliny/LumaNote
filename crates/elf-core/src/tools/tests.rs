@@ -11,7 +11,7 @@ use super::*;
 use crate::policy::{evaluate, ActionRequest, ApprovalReason, Decision};
 use crate::ports::fakes::FakeClock;
 use crate::schema::{hash_arguments, sha256_hex};
-use crate::storage::{NewGrant, Store};
+use crate::storage::{GrantScope, NewGrant, Store};
 
 struct Env {
     store: SharedStore,
@@ -54,6 +54,7 @@ fn env() -> Env {
                         expires_at: None,
                         max_uses: None,
                         source_task: None,
+                        scope: GrantScope::UserStanding,
                     },
                     now,
                 )?;
@@ -204,6 +205,7 @@ fn only_implemented_permitted_tools_are_exposed() {
                     expires_at: None,
                     max_uses: None,
                     source_task: None,
+                    scope: GrantScope::UserStanding,
                 },
                 now,
             )

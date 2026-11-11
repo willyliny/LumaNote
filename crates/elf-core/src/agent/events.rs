@@ -30,6 +30,31 @@ pub enum AgentEventKind {
         /// The new text.
         text: String,
     },
+    /// Incremental reasoning text from the model. Display-only: it is never stored and
+    /// never part of the answer.
+    ReasoningDelta {
+        /// The new text.
+        text: String,
+    },
+    /// The provider accepted the request (which provider and model actually answer).
+    ModelStarted {
+        /// Provider name of the profile.
+        provider: String,
+        /// The model that actually answers, if the provider said.
+        model: Option<String>,
+        /// The provider's request id, for support.
+        request_id: Option<String>,
+    },
+    /// The model asked for a call that cannot run (malformed or incomplete arguments, an
+    /// unknown tool). Nothing was executed; the model gets an error result and continues.
+    ToolCallRejected {
+        /// Call identifier.
+        call_id: ToolCallId,
+        /// Tool name, if the stream carried one.
+        tool: Option<String>,
+        /// Why it was rejected.
+        reason: String,
+    },
     /// The model stream failed and is being retried; the UI should drop the text of the
     /// failed attempt.
     StreamRetry {

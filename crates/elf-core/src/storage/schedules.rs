@@ -25,6 +25,10 @@ pub struct ScheduleRow {
     pub misfire_policy: String,
     /// Whether the schedule is active.
     pub enabled: bool,
+    /// When the user deleted the schedule (soft delete). A deleted schedule is invisible
+    /// to listings and the engine; its deliveries remain as history. Ignored on insert
+    /// and replace (use [`Store::soft_delete_schedule_row`]).
+    pub deleted_at: Option<Timestamp>,
 }
 
 /// A raw `deliveries` row.
@@ -53,8 +57,12 @@ pub struct NewDeliveryRow {
     pub status: String,
 }
 
+/// Columns written on insert (everything but `deleted_at`).
 const SCHEDULE_COLS: &str =
     "id, task_template, timezone, next_run_at, recurrence, misfire_policy, enabled";
+/// Columns read back.
+const SCHEDULE_SELECT: &str =
+    "id, task_template, timezone, next_run_at, recurrence, misfire_policy, enabled, deleted_at";
 const DELIVERY_COLS: &str = "id, schedule_id, occurrence_key, status, delivered_at";
 
 fn schedule_from_row(r: &Row<'_>) -> rusqlite::Result<ScheduleRow> {
@@ -66,6 +74,7 @@ fn schedule_from_row(r: &Row<'_>) -> rusqlite::Result<ScheduleRow> {
         recurrence: r.get(4)?,
         misfire_policy: r.get(5)?,
         enabled: r.get::<_, i64>(6)? != 0,
+        deleted_at: get_opt_ts(r, 7)?,
     })
 }
 
@@ -97,32 +106,35 @@ impl Store {
         Ok(())
     }
 
-    /// Loads one schedule row.
+    /// Loads one schedule row, deleted or not (check `deleted_at`).
     pub fn get_schedule_row(&self, id: &str) -> Result<Option<ScheduleRow>> {
         Ok(self
             .conn
             .query_row(
-                &format!("SELECT {SCHEDULE_COLS} FROM schedules WHERE id = ?1"),
+                &format!("SELECT {SCHEDULE_SELECT} FROM schedules WHERE id = ?1"),
                 [id],
                 schedule_from_row,
             )
             .optional()?)
     }
 
-    /// All schedule rows in creation order.
-    pub fn list_schedule_rows(&self) -> Result<Vec<ScheduleRow>> {
+    /// Schedule rows in creation order; soft-deleted ones only with `include_deleted`.
+    pub fn list_schedule_rows(&self, include_deleted: bool) -> Result<Vec<ScheduleRow>> {
         let mut stmt = self.conn.prepare(&format!(
-            "SELECT {SCHEDULE_COLS} FROM schedules ORDER BY rowid"
+            "SELECT {SCHEDULE_SELECT} FROM schedules
+             WHERE (?1 OR deleted_at IS NULL) ORDER BY rowid"
         ))?;
-        let rows = stmt.query_map([], schedule_from_row)?;
+        let rows = stmt.query_map([include_deleted], schedule_from_row)?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
 
-    /// Replaces every mutable column of an existing schedule; false if it does not exist.
+    /// Replaces every mutable column of an existing, not deleted schedule; false if it
+    /// does not exist or was deleted.
     pub fn replace_schedule_row(&mut self, row: &ScheduleRow) -> Result<bool> {
         let n = self.conn.execute(
             "UPDATE schedules SET task_template = ?2, timezone = ?3, next_run_at = ?4,
-                 recurrence = ?5, misfire_policy = ?6, enabled = ?7 WHERE id = ?1",
+                 recurrence = ?5, misfire_policy = ?6, enabled = ?7
+             WHERE id = ?1 AND deleted_at IS NULL",
             params![
                 row.id,
                 row.task_template,
@@ -136,18 +148,35 @@ impl Store {
         Ok(n == 1)
     }
 
-    /// Deletes a schedule and (by cascade) its deliveries; false if it did not exist.
-    pub fn delete_schedule_row(&mut self, id: &str) -> Result<bool> {
-        Ok(self
+    /// Soft-deletes a schedule (handbook 9: trigger records are kept). In ONE transaction:
+    /// sets `deleted_at`, disables it and clears `next_run_at`, and cancels deliveries that
+    /// were still `pending` so they are never notified. All other delivery rows stay
+    /// untouched. Returns false if the schedule does not exist or is already deleted.
+    pub fn soft_delete_schedule_row(&mut self, id: &str, now: Timestamp) -> Result<bool> {
+        let tx = self
             .conn
-            .execute("DELETE FROM schedules WHERE id = ?1", [id])?
-            == 1)
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let n = tx.execute(
+            "UPDATE schedules SET deleted_at = ?2, enabled = 0, next_run_at = NULL
+             WHERE id = ?1 AND deleted_at IS NULL",
+            params![id, ts_to_sql(&now)],
+        )?;
+        if n == 0 {
+            return Ok(false);
+        }
+        tx.execute(
+            "UPDATE deliveries SET status = 'cancelled' WHERE schedule_id = ?1 AND status = 'pending'",
+            [id],
+        )?;
+        tx.commit()?;
+        Ok(true)
     }
 
     /// Earliest `next_run_at` among enabled schedules.
     pub fn earliest_next_run(&self) -> Result<Option<Timestamp>> {
         let min: Option<String> = self.conn.query_row(
-            "SELECT MIN(next_run_at) FROM schedules WHERE enabled = 1 AND next_run_at IS NOT NULL",
+            "SELECT MIN(next_run_at) FROM schedules
+             WHERE enabled = 1 AND deleted_at IS NULL AND next_run_at IS NOT NULL",
             [],
             |r| r.get(0),
         )?;
@@ -159,7 +188,8 @@ impl Store {
     pub fn due_schedule_ids(&self, now: Timestamp) -> Result<Vec<String>> {
         let mut stmt = self.conn.prepare(
             "SELECT id FROM schedules
-             WHERE enabled = 1 AND next_run_at IS NOT NULL AND next_run_at <= ?1
+             WHERE enabled = 1 AND deleted_at IS NULL
+               AND next_run_at IS NOT NULL AND next_run_at <= ?1
              ORDER BY next_run_at, id",
         )?;
         let rows = stmt.query_map([ts_to_sql(&now)], |r| r.get::<_, String>(0))?;
@@ -179,6 +209,15 @@ impl Store {
         let tx = self
             .conn
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let live: i64 = tx.query_row(
+            "SELECT COUNT(*) FROM schedules WHERE id = ?1 AND deleted_at IS NULL",
+            [schedule_id],
+            |r| r.get(0),
+        )?;
+        if live == 0 {
+            // deleted (or gone) schedules record nothing
+            return Ok(Vec::new());
+        }
         let mut inserted = Vec::new();
         {
             let mut stmt = tx.prepare(
@@ -201,9 +240,12 @@ impl Store {
     }
 
     /// Deliveries still waiting for a confirmed notification, grouped by schedule.
+    /// Deliveries of soft-deleted schedules are never returned.
     pub fn pending_delivery_rows(&self) -> Result<Vec<DeliveryRow>> {
         let mut stmt = self.conn.prepare(&format!(
-            "SELECT {DELIVERY_COLS} FROM deliveries WHERE status = 'pending'
+            "SELECT {DELIVERY_COLS} FROM deliveries
+             WHERE status = 'pending'
+               AND schedule_id IN (SELECT id FROM schedules WHERE deleted_at IS NULL)
              ORDER BY schedule_id, occurrence_key"
         ))?;
         let rows = stmt.query_map([], delivery_from_row)?;
@@ -287,7 +329,9 @@ impl Store {
             .conn
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
         let n = tx.execute(
-            "UPDATE deliveries SET status = 'snoozed' WHERE id = ?1 AND status = 'delivered'",
+            "UPDATE deliveries SET status = 'snoozed'
+             WHERE id = ?1 AND status = 'delivered'
+               AND schedule_id IN (SELECT id FROM schedules WHERE deleted_at IS NULL)",
             [delivery_id],
         )?;
         if n == 0 {

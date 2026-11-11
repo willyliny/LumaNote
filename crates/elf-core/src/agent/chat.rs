@@ -5,8 +5,8 @@ use tokio_util::sync::CancellationToken;
 use super::history::to_messages;
 use super::turn::{TurnEnd, TurnParams};
 use super::{ModelBinding, Orchestrator};
-use crate::model::{FinishReason, MessagePart, ModelRequest, Role};
-use crate::schema::{ConversationId, ElfError, RequestId, Result};
+use crate::model::{MessagePart, ModelOrigin, ModelRequest, Role, StopReason};
+use crate::schema::{ConversationId, ElfError, Result};
 use crate::storage::StoredMessage;
 
 /// The assistant's reply on the chat path.
@@ -18,8 +18,8 @@ pub struct ChatReply {
     pub message: StoredMessage,
     /// The reply text.
     pub text: String,
-    /// Why the model stopped (e.g. `length` if the answer was cut off).
-    pub finish: FinishReason,
+    /// Why the model stopped (e.g. `max_tokens` if the answer was cut off).
+    pub finish: StopReason,
 }
 
 impl Orchestrator {
@@ -74,15 +74,16 @@ impl Orchestrator {
                 "the conversation has no unanswered user message",
             ));
         }
+        let origin = ModelOrigin::from_profile(&model.profile);
         let request = ModelRequest {
-            model_profile_id: model.profile.id.clone(),
-            instructions: self.config.chat_instructions.clone(),
-            messages: to_messages(&history),
-            tools: Vec::new(),
-            output_contract: None,
             output_budget: self.config.output_budget,
-            deadline: None,
-            request_id: RequestId::new(),
+            idle_timeout: Some(self.config.model_idle_timeout),
+            reasoning: self.config.reasoning.clone(),
+            ..ModelRequest::new(
+                model.profile.id.clone(),
+                self.config.chat_instructions.clone(),
+                to_messages(&history, &origin),
+            )
         };
         let end = self
             .stream_turn(TurnParams {
@@ -96,6 +97,13 @@ impl Orchestrator {
             .await;
         match end {
             TurnEnd::Done(out) => {
+                if out.stop == StopReason::ContextExceeded {
+                    return Err(ElfError::ExternalFailure {
+                        message: "the conversation no longer fits the model's context window"
+                            .into(),
+                        retryable: false,
+                    });
+                }
                 if out.text.is_empty() {
                     return Err(ElfError::ExternalFailure {
                         message: "the model returned an empty reply".into(),
@@ -103,30 +111,34 @@ impl Orchestrator {
                     });
                 }
                 let now = self.clock.now_utc();
+                // text and provider state only: chat offers no tools, so a call the model
+                // makes anyway (rejected by the adapter) is not part of the conversation
+                let parts: Vec<MessagePart> = out
+                    .parts
+                    .iter()
+                    .filter(|p| {
+                        matches!(
+                            p,
+                            MessagePart::Text { .. } | MessagePart::ProviderState { .. }
+                        )
+                    })
+                    .cloned()
+                    .collect();
                 let message = self.store.with(|s| {
-                    s.append_message(
-                        conversation,
-                        None,
-                        Role::Assistant,
-                        &[MessagePart::Text {
-                            text: out.text.clone(),
-                        }],
-                        None,
-                        now,
-                    )
+                    s.append_message(conversation, None, Role::Assistant, &parts, None, now)
                 })?;
                 Ok(ChatReply {
                     conversation_id: conversation.clone(),
                     message,
                     text: out.text,
-                    finish: out.finish,
+                    finish: out.stop,
                 })
             }
             TurnEnd::Cancelled => Err(ElfError::Cancelled),
             TurnEnd::Deadline => Err(ElfError::Timeout {
                 operation: "chat reply".into(),
             }),
-            TurnEnd::Error { error, .. } => Err(error),
+            TurnEnd::Error { error, .. } => Err(error.to_elf_error()),
         }
     }
 }

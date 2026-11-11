@@ -222,6 +222,10 @@ pub struct Schedule {
     pub created_at: Timestamp,
     /// If this schedule is a snooze follow-up, the delivery it came from.
     pub snoozed_from: Option<DeliveryId>,
+    /// Set when the user deleted the schedule (soft delete). Only visible through the
+    /// `*_including_deleted` / `include_deleted` APIs; its delivery history is kept.
+    #[serde(default)]
+    pub deleted_at: Option<Timestamp>,
 }
 
 /// One occurrence of a schedule and what happened to it.

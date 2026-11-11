@@ -648,6 +648,7 @@ fn grants_round_trip_and_revocation_is_idempotent() {
                 expires_at: Some(c.now_utc() + chrono::Duration::hours(1)),
                 max_uses: Some(3),
                 source_task: None,
+                scope: GrantScope::UserStanding,
             },
             c.now_utc(),
         )

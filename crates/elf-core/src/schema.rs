@@ -36,9 +36,71 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
         .collect()
 }
 
-/// Stable hash of JSON arguments (object keys are sorted by `serde_json`).
+/// Stable hash of JSON arguments: SHA-256 of a canonical serialisation, so the same
+/// logical value always hashes the same.
+///
+/// Canonical form: no insignificant whitespace; object keys sorted by their UTF-8 bytes
+/// (independent of `serde_json`'s `preserve_order` feature or of the order in the source
+/// text); strings escaped as `serde_json` does; integers as plain decimal; a number
+/// written as a float whose value is a whole number with magnitude below 2^53 is treated
+/// as that integer, so `1`, `1.0` and `1e0` hash identically (and `-0.0` equals `0`);
+/// every other float uses the shortest round-trip form (`1.5`). Beyond that, values that
+/// differ in JSON type never collide: `1` and `"1"` differ, as do `null` and a missing key
+/// (an absent key and an explicit `null` are different arguments).
 pub fn hash_arguments(args: &serde_json::Value) -> String {
-    sha256_hex(args.to_string().as_bytes())
+    let mut out = String::new();
+    write_canonical(args, &mut out);
+    sha256_hex(out.as_bytes())
+}
+
+fn write_canonical(v: &serde_json::Value, out: &mut String) {
+    use serde_json::Value;
+    match v {
+        Value::Null => out.push_str("null"),
+        Value::Bool(b) => out.push_str(if *b { "true" } else { "false" }),
+        Value::Number(n) => {
+            if n.is_i64() || n.is_u64() {
+                out.push_str(&n.to_string());
+            } else if let Some(f) = n.as_f64() {
+                // 2^53: every whole number below it is exactly representable
+                if f.is_finite() && f.fract() == 0.0 && f.abs() < 9_007_199_254_740_992.0 {
+                    // truncation is exact here (checked above); `as i64` of -0.0 is 0
+                    out.push_str(&(f as i64).to_string());
+                } else {
+                    out.push_str(&n.to_string());
+                }
+            } else {
+                out.push_str(&n.to_string());
+            }
+        }
+        Value::String(s) => out.push_str(&Value::String(s.clone()).to_string()),
+        Value::Array(items) => {
+            out.push('[');
+            for (i, item) in items.iter().enumerate() {
+                if i > 0 {
+                    out.push(',');
+                }
+                write_canonical(item, out);
+            }
+            out.push(']');
+        }
+        Value::Object(map) => {
+            let mut keys: Vec<&String> = map.keys().collect();
+            keys.sort_unstable_by(|a, b| a.as_bytes().cmp(b.as_bytes()));
+            out.push('{');
+            for (i, k) in keys.into_iter().enumerate() {
+                if i > 0 {
+                    out.push(',');
+                }
+                out.push_str(&Value::String(k.clone()).to_string());
+                out.push(':');
+                if let Some(child) = map.get(k) {
+                    write_canonical(child, out);
+                }
+            }
+            out.push('}');
+        }
+    }
 }
 
 macro_rules! id_type {

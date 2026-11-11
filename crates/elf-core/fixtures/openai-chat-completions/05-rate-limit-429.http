@@ -1,0 +1,29 @@
+# fixture: openai-chat-completions/05-rate-limit-429.http
+# protocol: OpenAI Chat Completions, POST /v1/chat/completions (stream requested, rejected before streaming starts)
+# provenance: CONSTRUCTED by R2 from documented header names/formats. Values, IDs and message text invented.
+# sources (checked 2026-11-11):
+#   https://developers.openai.com/api/docs/guides/rate-limits
+#     x-ratelimit-limit-requests / -tokens, x-ratelimit-remaining-requests / -tokens,
+#     x-ratelimit-reset-requests / -tokens as DURATIONS (e.g. "1s", "6m0s"), Retry-After seconds (e.g. 56) on transient 429 and 503.
+#   https://developers.openai.com/api/docs/guides/error-codes
+#     429 variants: rate limit reached; "slow_down" (type rate_limit_error); credit_balance_exhausted;
+#     organization_spend_limit_exceeded; project_spend_limit_exceeded; organization_usage_limit_exceeded (do NOT retry these;
+#     error.type may be "insufficient_quota" — branch on error.code). 503 server_is_overloaded (type service_unavailable_error).
+# NOT verified: the full JSON body of a request-rate 429 is not printed in the docs; the body below uses the documented field
+#   names error.message/type/param/code with type "requests" and code "rate_limit_exceeded", both assumptions. Classify by HTTP status + code.
+# NOT verified: header names of third-party "OpenAI-compatible" servers; most do not send x-ratelimit-*.
+# file format: everything above "# ---" is a comment block; below is a raw HTTP/1.1 response.
+# expected: Failed(kind=rate_limited, retry_after=Some(7s), retryable=true, request_id="req_FIXTURE429")
+# ---
+HTTP/1.1 429 Too Many Requests
+content-type: application/json
+x-request-id: req_FIXTURE429
+retry-after: 7
+x-ratelimit-limit-requests: 60
+x-ratelimit-remaining-requests: 0
+x-ratelimit-reset-requests: 7s
+x-ratelimit-limit-tokens: 150000
+x-ratelimit-remaining-tokens: 149120
+x-ratelimit-reset-tokens: 352ms
+
+{"error":{"message":"Rate limit reached for requests. Please try again in 7s.","type":"requests","param":null,"code":"rate_limit_exceeded"}}

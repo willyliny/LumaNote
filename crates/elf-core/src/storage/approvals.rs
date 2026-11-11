@@ -181,11 +181,11 @@ impl Store {
         let tx = self
             .conn
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let current: String = tx
+        let (current, approval_task): (String, String) = tx
             .query_row(
-                "SELECT status FROM approvals WHERE id = ?1",
+                "SELECT status, task_id FROM approvals WHERE id = ?1",
                 [id.as_str()],
-                |r| r.get(0),
+                |r| Ok((r.get(0)?, r.get(1)?)),
             )
             .optional()?
             .ok_or_else(|| ElfError::invalid_input(format!("unknown approval {id}")))?;
@@ -196,21 +196,16 @@ impl Store {
         }
         let (status, grant_id) = match grant {
             Some(g) => {
-                let gid = GrantId::new();
-                tx.execute(
-                    "INSERT INTO grants (id, action, resource_scope, arguments_hash, expires_at, max_uses, source_task, created_at)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-                    params![
-                        gid.as_str(),
-                        g.action,
-                        g.resource_scope,
-                        g.arguments_hash,
-                        g.expires_at.as_ref().map(ts_to_sql),
-                        g.max_uses,
-                        g.source_task.as_ref().map(TaskId::as_str),
-                        ts_to_sql(&now)
-                    ],
-                )?;
+                // An approval answers one task's request: its grant is that task's, never
+                // a standing grant for everyone.
+                if g.scope != super::grants::GrantScope::Task
+                    || g.source_task.as_ref().map(TaskId::as_str) != Some(approval_task.as_str())
+                {
+                    return Err(ElfError::invalid_input(
+                        "an approval can only create a grant scoped to its own task",
+                    ));
+                }
+                let gid = super::grants::insert_grant_row(&tx, g, now)?;
                 (ApprovalStatus::Approved, Some(gid))
             }
             None => (ApprovalStatus::Denied, None),

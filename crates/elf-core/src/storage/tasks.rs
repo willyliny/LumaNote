@@ -7,7 +7,8 @@ use serde_json::{json, Value};
 use super::{conv, get_json, get_opt_ts, get_ts, to_json, Store};
 use crate::ports::Clock;
 use crate::schema::{
-    ts_to_sql, ConversationId, ElfError, EvidenceRef, Result, StepId, TaskId, Timestamp, Trust,
+    ts_to_sql, ConversationId, ElfError, EvidenceRef, GrantId, Result, StepId, TaskId, Timestamp,
+    Trust,
 };
 use crate::task::{check_transition, SideEffect, StepStatus, TaskStatus};
 
@@ -86,6 +87,9 @@ pub struct TaskStep {
     pub evidence_ref: Option<String>,
     /// The saved tool result (what the model was told); reused instead of re-running.
     pub result: Option<Value>,
+    /// The grant whose use was consumed to authorise this step, recorded in the same
+    /// transaction as the step itself (see [`crate::policy::authorize_and_begin_step`]).
+    pub consumed_grant_id: Option<GrantId>,
 }
 
 /// A task event row (source of frontend event sequence numbers).
@@ -142,7 +146,7 @@ pub struct RecoveredTask {
 const TASK_COLS: &str =
     "id, intent, status, scope_json, created_at, updated_at, result_ref, untrusted_content, \
      parent_task_id, limits_json, tool_call_count, started_at, conversation_id, tool_call_base";
-const STEP_COLS: &str = "id, task_id, seq, tool, args_redacted, side_effect, status, idempotency_key, started_at, finished_at, evidence_ref, result_json";
+const STEP_COLS: &str = "id, task_id, seq, tool, args_redacted, side_effect, status, idempotency_key, started_at, finished_at, evidence_ref, result_json, consumed_grant_id";
 
 fn task_from_row(r: &Row<'_>) -> rusqlite::Result<Task> {
     let status: String = r.get(2)?;
@@ -192,6 +196,7 @@ fn step_from_row(r: &Row<'_>) -> rusqlite::Result<TaskStep> {
                 )
             })
             .transpose()?,
+        consumed_grant_id: r.get::<_, Option<String>>(12)?.map(GrantId::from_string),
     })
 }
 
@@ -330,7 +335,101 @@ fn apply_transition(
     if let (Some(p), Some(x)) = (payload.as_object_mut(), extra.as_object()) {
         p.extend(x.iter().map(|(k, v)| (k.clone(), v.clone())));
     }
+    // A finished task keeps no live grants: its task-scoped grants end in the same
+    // transaction as the transition, so a crash cannot leave them behind.
+    if to.is_terminal() {
+        super::grants::revoke_task_scoped(conn, id, now)?;
+    }
     insert_event(conn, id, "status_changed", &payload, now)
+}
+
+/// Write-ahead insert of a `started` step on `conn` (normally inside a transaction).
+/// The task must be `running`.
+pub(crate) fn begin_step_in(
+    conn: &Connection,
+    task_id: &TaskId,
+    tool: &str,
+    args_redacted: Option<&str>,
+    side_effect: SideEffect,
+    idempotency_key: Option<&str>,
+    now: Timestamp,
+) -> Result<StepId> {
+    let task = load_task(conn, task_id)?;
+    if task.status != TaskStatus::Running {
+        return Err(ElfError::invalid_input(format!(
+            "cannot start a step while task is {}",
+            task.status
+        )));
+    }
+    let seq: i64 = conn.query_row(
+        "SELECT COALESCE(MAX(seq), 0) + 1 FROM task_steps WHERE task_id = ?1",
+        [task_id.as_str()],
+        |r| r.get(0),
+    )?;
+    let id = StepId::new();
+    conn.execute(
+        "INSERT INTO task_steps (id, task_id, seq, tool, args_redacted, side_effect, status, idempotency_key, started_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'started', ?7, ?8)",
+        params![
+            id.as_str(),
+            task_id.as_str(),
+            seq,
+            tool,
+            args_redacted,
+            side_effect.as_str(),
+            idempotency_key,
+            ts_to_sql(&now)
+        ],
+    )
+    .map_err(|e| match e {
+        rusqlite::Error::SqliteFailure(f, _)
+            if f.code == rusqlite::ErrorCode::ConstraintViolation =>
+        {
+            ElfError::invalid_input("duplicate idempotency key for this task")
+        }
+        other => other.into(),
+    })?;
+    Ok(id)
+}
+
+/// Re-opens a failed or interrupted non-external step on `conn` (see [`Store::reopen_step`]).
+pub(crate) fn reopen_step_in(conn: &Connection, step_id: &StepId, now: Timestamp) -> Result<()> {
+    let step = conn
+        .query_row(
+            &format!("SELECT {STEP_COLS} FROM task_steps WHERE id = ?1"),
+            [step_id.as_str()],
+            step_from_row,
+        )
+        .optional()?
+        .ok_or_else(|| ElfError::invalid_input(format!("unknown step {step_id}")))?;
+    let allowed = matches!(step.status, StepStatus::Failed | StepStatus::Interrupted)
+        && step.side_effect != SideEffect::ExternalWrite;
+    if !allowed {
+        return Err(ElfError::InvalidTransition {
+            from: step.status.to_string(),
+            to: StepStatus::Started.to_string(),
+            reason: Some("only failed or interrupted non-external steps can be re-run".into()),
+        });
+    }
+    conn.execute(
+        "UPDATE task_steps SET status = 'started', started_at = ?2, finished_at = NULL,
+             evidence_ref = NULL, result_json = NULL, consumed_grant_id = NULL WHERE id = ?1",
+        params![step_id.as_str(), ts_to_sql(&now)],
+    )?;
+    Ok(())
+}
+
+/// Records which grant use authorised a step.
+pub(crate) fn set_step_consumed_grant(
+    conn: &Connection,
+    step_id: &StepId,
+    grant: &GrantId,
+) -> Result<()> {
+    conn.execute(
+        "UPDATE task_steps SET consumed_grant_id = ?2 WHERE id = ?1",
+        params![step_id.as_str(), grant.as_str()],
+    )?;
+    Ok(())
 }
 
 impl Store {
@@ -488,39 +587,15 @@ impl Store {
         let tx = self
             .conn
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let task = load_task(&tx, task_id)?;
-        if task.status != TaskStatus::Running {
-            return Err(ElfError::invalid_input(format!(
-                "cannot start a step while task is {}",
-                task.status
-            )));
-        }
-        let seq: i64 = tx.query_row(
-            "SELECT COALESCE(MAX(seq), 0) + 1 FROM task_steps WHERE task_id = ?1",
-            [task_id.as_str()],
-            |r| r.get(0),
+        let id = begin_step_in(
+            &tx,
+            task_id,
+            tool,
+            args_redacted,
+            side_effect,
+            idempotency_key,
+            now,
         )?;
-        let id = StepId::new();
-        tx.execute(
-            "INSERT INTO task_steps (id, task_id, seq, tool, args_redacted, side_effect, status, idempotency_key, started_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'started', ?7, ?8)",
-            params![
-                id.as_str(),
-                task_id.as_str(),
-                seq,
-                tool,
-                args_redacted,
-                side_effect.as_str(),
-                idempotency_key,
-                ts_to_sql(&now)
-            ],
-        )
-        .map_err(|e| match e {
-            rusqlite::Error::SqliteFailure(f, _) if f.code == rusqlite::ErrorCode::ConstraintViolation => {
-                ElfError::invalid_input("duplicate idempotency key for this task")
-            }
-            other => other.into(),
-        })?;
         tx.commit()?;
         self.get_step(&id)
     }
@@ -582,21 +657,7 @@ impl Store {
     /// same idempotency key can be executed again (write-ahead: back to `started`).
     /// Succeeded steps are never re-opened and external writes are never re-run.
     pub fn reopen_step(&mut self, step_id: &StepId, now: Timestamp) -> Result<TaskStep> {
-        let step = self.get_step(step_id)?;
-        let allowed = matches!(step.status, StepStatus::Failed | StepStatus::Interrupted)
-            && step.side_effect != SideEffect::ExternalWrite;
-        if !allowed {
-            return Err(ElfError::InvalidTransition {
-                from: step.status.to_string(),
-                to: StepStatus::Started.to_string(),
-                reason: Some("only failed or interrupted non-external steps can be re-run".into()),
-            });
-        }
-        self.conn.execute(
-            "UPDATE task_steps SET status = 'started', started_at = ?2, finished_at = NULL,
-                 evidence_ref = NULL, result_json = NULL WHERE id = ?1",
-            params![step_id.as_str(), ts_to_sql(&now)],
-        )?;
+        reopen_step_in(&self.conn, step_id, now)?;
         self.get_step(step_id)
     }
 
@@ -726,6 +787,23 @@ impl Store {
                 "UPDATE task_steps SET status = 'uncertain' WHERE task_id = ?1 AND status = 'started' AND side_effect = 'external_write'",
                 [id.as_str()],
             )?;
+            // A non-external step cut off mid-run may be re-run after resume, and the re-run
+            // is authorised again. Give back the use its first attempt consumed so a
+            // one-shot approval is not spent twice for one operation. External steps keep
+            // theirs: they are never re-run.
+            tx.execute(
+                "UPDATE grants SET used_count = used_count - 1
+                 WHERE used_count > 0 AND id IN (
+                     SELECT consumed_grant_id FROM task_steps
+                     WHERE task_id = ?1 AND status = 'started' AND side_effect != 'external_write'
+                       AND consumed_grant_id IS NOT NULL)",
+                [id.as_str()],
+            )?;
+            tx.execute(
+                "UPDATE task_steps SET consumed_grant_id = NULL
+                 WHERE task_id = ?1 AND status = 'started' AND side_effect != 'external_write'",
+                [id.as_str()],
+            )?;
             let interrupted = tx.execute(
                 "UPDATE task_steps SET status = 'interrupted' WHERE task_id = ?1 AND status = 'started'",
                 [id.as_str()],
@@ -747,6 +825,8 @@ impl Store {
                 uncertain_steps: uncertain,
             });
         }
+        // Crash repair: no finished task may keep live task-scoped grants.
+        super::grants::revoke_task_scoped_of_finished_tasks(&tx, now)?;
         tx.commit()?;
         Ok(out)
     }

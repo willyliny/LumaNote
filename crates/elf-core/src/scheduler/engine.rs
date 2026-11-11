@@ -90,6 +90,7 @@ fn row_to_schedule(row: &ScheduleRow) -> Result<Schedule> {
         payload: t.payload,
         created_at: t.created_at,
         snoozed_from: t.snoozed_from.map(DeliveryId::from_string),
+        deleted_at: row.deleted_at,
     })
 }
 
@@ -115,7 +116,16 @@ fn schedule_to_row(s: &Schedule) -> Result<ScheduleRow> {
         recurrence: s.recurrence.as_ref().map(Recurrence::to_rrule),
         misfire_policy: s.misfire_policy.as_str().to_owned(),
         enabled: s.enabled,
+        deleted_at: s.deleted_at,
     })
+}
+
+/// The live (not soft-deleted) schedule row, or an "unknown schedule" error.
+fn live_row(store: &Store, id: &ScheduleId) -> Result<ScheduleRow> {
+    store
+        .get_schedule_row(id.as_str())?
+        .filter(|r| r.deleted_at.is_none())
+        .ok_or_else(|| ElfError::invalid_input(format!("unknown schedule {id}")))
 }
 
 fn row_to_delivery(row: &DeliveryRow) -> Result<Delivery> {
@@ -272,6 +282,7 @@ impl Scheduler {
             payload: new.payload,
             created_at: now,
             snoozed_from: None,
+            deleted_at: None,
         };
         self.db()
             .insert_schedule_row(&schedule_to_row(&schedule)?)?;
@@ -283,9 +294,7 @@ impl Scheduler {
     pub fn update_schedule(&self, id: &ScheduleId, update: ScheduleUpdate) -> Result<Schedule> {
         let now = self.clock.now_utc();
         let mut store = self.db();
-        let row = store
-            .get_schedule_row(id.as_str())?
-            .ok_or_else(|| ElfError::invalid_input(format!("unknown schedule {id}")))?;
+        let row = live_row(&store, id)?;
         let mut s = row_to_schedule(&row)?;
 
         if let Some(t) = update.title {
@@ -361,9 +370,7 @@ impl Scheduler {
     pub fn set_enabled(&self, id: &ScheduleId, enabled: bool) -> Result<Schedule> {
         let now = self.clock.now_utc();
         let mut store = self.db();
-        let row = store
-            .get_schedule_row(id.as_str())?
-            .ok_or_else(|| ElfError::invalid_input(format!("unknown schedule {id}")))?;
+        let row = live_row(&store, id)?;
         let mut s = row_to_schedule(&row)?;
         if enabled && !s.enabled {
             if let Some(next) = s.next_run_at {
@@ -388,9 +395,13 @@ impl Scheduler {
         Ok(s)
     }
 
-    /// Deletes a schedule together with its delivery history.
+    /// Deletes a schedule (soft delete). It stops firing at once and disappears from
+    /// listings; its delivery history is kept (handbook section 9) and stays queryable
+    /// through [`Scheduler::list_deliveries`]. Notifications still `pending` for it are
+    /// cancelled. Deleting an unknown or already deleted schedule is an error.
     pub fn delete_schedule(&self, id: &ScheduleId) -> Result<()> {
-        let deleted = self.db().delete_schedule_row(id.as_str())?;
+        let now = self.clock.now_utc();
+        let deleted = self.db().soft_delete_schedule_row(id.as_str(), now)?;
         if !deleted {
             return Err(ElfError::invalid_input(format!("unknown schedule {id}")));
         }
@@ -398,8 +409,14 @@ impl Scheduler {
         Ok(())
     }
 
-    /// Loads one schedule.
+    /// Loads one schedule; a deleted schedule is reported as unknown.
     pub fn get_schedule(&self, id: &ScheduleId) -> Result<Schedule> {
+        row_to_schedule(&live_row(&self.db(), id)?)
+    }
+
+    /// Loads one schedule even if it was deleted (for showing the history of a deleted
+    /// reminder); `deleted_at` tells which.
+    pub fn get_schedule_including_deleted(&self, id: &ScheduleId) -> Result<Schedule> {
         let row = self
             .db()
             .get_schedule_row(id.as_str())?
@@ -407,10 +424,16 @@ impl Scheduler {
         row_to_schedule(&row)
     }
 
-    /// All schedules in creation order.
+    /// All live schedules in creation order (deleted ones excluded).
     pub fn list_schedules(&self) -> Result<Vec<Schedule>> {
+        self.list_schedules_with(false)
+    }
+
+    /// Schedules in creation order; with `include_deleted` the soft-deleted ones are
+    /// listed too (marked by `deleted_at`).
+    pub fn list_schedules_with(&self, include_deleted: bool) -> Result<Vec<Schedule>> {
         self.db()
-            .list_schedule_rows()?
+            .list_schedule_rows(include_deleted)?
             .iter()
             .map(row_to_schedule)
             .collect()
@@ -446,6 +469,7 @@ impl Scheduler {
             .ok_or_else(|| ElfError::invalid_input(format!("unknown delivery {delivery}")))?;
         let origin_row = store
             .get_schedule_row(&d.schedule_id)?
+            .filter(|r| r.deleted_at.is_none())
             .ok_or_else(|| ElfError::invalid_input("the delivery's schedule no longer exists"))?;
         let origin = row_to_schedule(&origin_row)?;
         let follow_up = Schedule {
@@ -463,6 +487,7 @@ impl Scheduler {
             payload: origin.payload,
             created_at: now,
             snoozed_from: Some(delivery.clone()),
+            deleted_at: None,
         };
         if !store.snooze_delivery(delivery.as_str(), &schedule_to_row(&follow_up)?)? {
             return Err(ElfError::InvalidTransition {
@@ -598,7 +623,7 @@ impl Scheduler {
             let Some(row) = store.get_schedule_row(&id)? else {
                 continue;
             };
-            if !row.enabled || row.next_run_at.is_none_or(|n| n > now) {
+            if !row.enabled || row.deleted_at.is_some() || row.next_run_at.is_none_or(|n| n > now) {
                 continue;
             }
             match self.plan_schedule(&row, now) {
@@ -761,7 +786,10 @@ impl Scheduler {
             }
             let group = &pending[i..j];
             i = j;
-            let Some(row) = store.get_schedule_row(schedule_id)? else {
+            let Some(row) = store
+                .get_schedule_row(schedule_id)?
+                .filter(|r| r.deleted_at.is_none())
+            else {
                 continue;
             };
             let (title, body, tz) = match row_to_schedule(&row) {

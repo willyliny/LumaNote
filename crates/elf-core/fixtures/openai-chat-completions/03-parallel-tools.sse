@@ -1,0 +1,33 @@
+: fixture: openai-chat-completions/03-parallel-tools.sse
+: protocol: OpenAI Chat Completions, streaming, two function calls in one turn (parallel_tool_calls default true), include_usage=true
+: provenance: CONSTRUCTED by R2 from documented schema (tool_calls[].index distinguishes calls; accumulate by index).
+: sources (checked 2026-11-11):
+:   https://developers.openai.com/api/docs/guides/function-calling ("The model may choose to call multiple functions in a single turn";
+:     parallel_tool_calls=false "ensures exactly zero or one tool is called")
+:   https://developers.openai.com/api/reference/resources/chat/subresources/completions/streaming-events
+: note: this fixture puts a short assistant text before the calls and also has the SECOND call's first fragment in the
+:   same chunk as the tail of the first call — the schema (tool_calls is an array) allows this; whether OpenAI itself
+:   ever does it is not documented. Third-party servers vary. Adapter must handle both.
+: note: prompt_tokens_details.cached_tokens > 0 here (constructed) to exercise cache-usage mapping.
+: expected ModelEvents: TextDelta("Checking both."), ToolCallReady(call_FIXTUREp1, get_weather, {"location":"Taipei"}),
+:   ToolCallReady(call_FIXTUREp2, get_time, {"timezone":"Asia/Taipei"}), Usage(input=640, cached=512, output=41), Completed(stop=tool_calls)
+:   Results go back as two separate {"role":"tool","tool_call_id":...} messages after the assistant message that carries both tool_calls.
+
+data: {"id":"chatcmpl-FIXTURE0003","object":"chat.completion.chunk","created":1762848002,"model":"gpt-5.5","choices":[{"index":0,"delta":{"role":"assistant","content":"Checking both."},"logprobs":null,"finish_reason":null}],"usage":null}
+
+data: {"id":"chatcmpl-FIXTURE0003","object":"chat.completion.chunk","created":1762848002,"model":"gpt-5.5","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_FIXTUREp1","type":"function","function":{"name":"get_weather","arguments":""}}]},"logprobs":null,"finish_reason":null}],"usage":null}
+
+data: {"id":"chatcmpl-FIXTURE0003","object":"chat.completion.chunk","created":1762848002,"model":"gpt-5.5","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"location\": \"Tai"}}]},"logprobs":null,"finish_reason":null}],"usage":null}
+
+data: {"id":"chatcmpl-FIXTURE0003","object":"chat.completion.chunk","created":1762848002,"model":"gpt-5.5","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"pei\"}"}},{"index":1,"id":"call_FIXTUREp2","type":"function","function":{"name":"get_time","arguments":""}}]},"logprobs":null,"finish_reason":null}],"usage":null}
+
+data: {"id":"chatcmpl-FIXTURE0003","object":"chat.completion.chunk","created":1762848002,"model":"gpt-5.5","choices":[{"index":0,"delta":{"tool_calls":[{"index":1,"function":{"arguments":"{\"timezone\":"}}]},"logprobs":null,"finish_reason":null}],"usage":null}
+
+data: {"id":"chatcmpl-FIXTURE0003","object":"chat.completion.chunk","created":1762848002,"model":"gpt-5.5","choices":[{"index":0,"delta":{"tool_calls":[{"index":1,"function":{"arguments":" \"Asia/Taipei\"}"}}]},"logprobs":null,"finish_reason":null}],"usage":null}
+
+data: {"id":"chatcmpl-FIXTURE0003","object":"chat.completion.chunk","created":1762848002,"model":"gpt-5.5","choices":[{"index":0,"delta":{},"logprobs":null,"finish_reason":"tool_calls"}],"usage":null}
+
+data: {"id":"chatcmpl-FIXTURE0003","object":"chat.completion.chunk","created":1762848002,"model":"gpt-5.5","choices":[],"usage":{"prompt_tokens":640,"completion_tokens":41,"total_tokens":681,"prompt_tokens_details":{"cached_tokens":512},"completion_tokens_details":{"reasoning_tokens":0}}}
+
+data: [DONE]
+

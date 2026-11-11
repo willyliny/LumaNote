@@ -25,7 +25,7 @@ mod tests;
 
 pub use approvals::{Approval, ApprovalStatus, NewApproval};
 pub use content::{Artifact, Conversation, StoredMessage};
-pub use grants::{Grant, NewGrant};
+pub use grants::{Grant, GrantScope, NewGrant};
 pub use migrate::{Migration, MIGRATIONS};
 pub use tasks::{NewTask, RecoveredTask, StepOutcome, Task, TaskEvent, TaskStep};
 pub use todos::{NewTodo, Todo, TodoStatus};

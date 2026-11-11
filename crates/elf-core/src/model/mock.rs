@@ -7,9 +7,10 @@ use std::time::Duration;
 use futures::stream::{BoxStream, StreamExt};
 use tokio_util::sync::CancellationToken;
 
+use super::assembler::ToolCallAssembler;
 use super::contracts::*;
 use crate::ports::Clock;
-use crate::schema::{ElfError, ToolCallId};
+use crate::schema::ToolCallId;
 
 /// One scripted provider-level step.
 #[derive(Debug, Clone, PartialEq)]
@@ -18,6 +19,22 @@ pub enum ScriptStep {
     Delay(Duration),
     /// Provider text chunk.
     Text(String),
+    /// Provider reasoning chunk (forwarded as `ReasoningDelta`, never as text).
+    Reasoning(String),
+    /// Provider-opaque state for the assistant turn.
+    ProviderState {
+        /// Adapter-defined kind.
+        kind: String,
+        /// Payload.
+        data: serde_json::Value,
+    },
+    /// The provider accepted the request.
+    Started {
+        /// Provider request id.
+        request_id: Option<String>,
+        /// Model that answers.
+        model: Option<String>,
+    },
     /// Provider tool-call argument fragment (name usually only on the first).
     ToolFragment {
         /// Call identifier.
@@ -35,9 +52,9 @@ pub enum ScriptStep {
     /// Usage report.
     Usage(Usage),
     /// Normal completion.
-    Complete(FinishReason),
+    Complete(StopReason),
     /// Mid-stream failure.
-    Fail(ElfError),
+    Fail(ModelError),
 }
 
 /// A step plus an optional provider event id used to drop duplicate deliveries.
@@ -131,23 +148,35 @@ struct State {
     cancel: CancellationToken,
     queue: VecDeque<ModelEvent>,
     finished: bool,
+    emitted: bool,
 }
 
 impl State {
-    fn fail(&mut self, error: ElfError) {
+    fn fail(&mut self, mut error: ModelError) {
+        error.partial_output_emitted = self.emitted;
         self.queue.push_back(ModelEvent::Failed { error });
         self.finished = true;
     }
 
+    fn push(&mut self, ev: ModelEvent) {
+        if !matches!(
+            ev,
+            ModelEvent::ResponseStarted { .. } | ModelEvent::Usage(_)
+        ) {
+            self.emitted = true;
+        }
+        self.queue.push_back(ev);
+    }
+
     async fn advance(&mut self) {
         if self.cancel.is_cancelled() {
-            return self.fail(ElfError::Cancelled);
+            return self.fail(ModelError::cancelled());
         }
         let Some(item) = self.items.pop_front() else {
-            return self.fail(ElfError::ExternalFailure {
-                message: "stream ended without completion".into(),
-                retryable: true,
-            });
+            return self.fail(ModelError::new(
+                ModelErrorKind::Network,
+                "stream ended without completion",
+            ));
         };
         if let Some(id) = &item.event_id {
             if !self.seen_ids.insert(id.clone()) {
@@ -158,11 +187,20 @@ impl State {
             ScriptStep::Delay(d) => {
                 let clock = self.clock.clone();
                 tokio::select! {
-                    _ = self.cancel.cancelled() => self.fail(ElfError::Cancelled),
+                    _ = self.cancel.cancelled() => self.fail(ModelError::cancelled()),
                     _ = clock.sleep(d) => {}
                 }
             }
-            ScriptStep::Text(text) => self.queue.push_back(ModelEvent::TextDelta { text }),
+            ScriptStep::Text(text) => self.push(ModelEvent::TextDelta { text }),
+            ScriptStep::Reasoning(text) => self.push(ModelEvent::ReasoningDelta { text }),
+            ScriptStep::ProviderState { kind, data } => {
+                self.push(ModelEvent::ProviderState { kind, data })
+            }
+            ScriptStep::Started { request_id, model } => self.push(ModelEvent::ResponseStarted {
+                request_id,
+                response_id: None,
+                model,
+            }),
             ScriptStep::ToolFragment {
                 call_id,
                 name,
@@ -172,28 +210,38 @@ impl State {
                     .assembler
                     .push_fragment(&call_id, name.as_deref(), &fragment)
                 {
-                    self.queue.push_back(ModelEvent::ToolCallDelta {
+                    self.push(ModelEvent::ToolCallDelta {
                         call_id,
                         name,
                         arguments_fragment: fragment,
                     });
                 }
             }
-            ScriptStep::ToolEnd { call_id } => match self.assembler.finish(&call_id, &self.tools) {
-                Ok(Some(ready)) => self.queue.push_back(ready),
-                Ok(None) => {}
-                Err(error) => self.fail(error),
-            },
-            ScriptStep::Usage(u) => self.queue.push_back(ModelEvent::Usage(u)),
-            ScriptStep::Complete(finish_reason) => {
+            ScriptStep::ToolEnd { call_id } => {
+                if let Some(ev) = self.assembler.finish(&call_id, &self.tools) {
+                    self.push(ev);
+                }
+            }
+            ScriptStep::Usage(u) => self.push(ModelEvent::Usage(u)),
+            ScriptStep::Complete(stop_reason) => {
                 if self.assembler.has_incomplete() {
-                    self.fail(ElfError::ExternalFailure {
-                        message: "stream completed with an unfinished tool call".into(),
-                        retryable: false,
-                    });
+                    if stop_reason.is_truncation() {
+                        for ev in self
+                            .assembler
+                            .reject_incomplete("the output limit was reached")
+                        {
+                            self.push(ev);
+                        }
+                        self.push(ModelEvent::Completed { stop_reason });
+                        self.finished = true;
+                    } else {
+                        self.fail(ModelError::new(
+                            ModelErrorKind::MalformedStream,
+                            "stream completed with an unfinished tool call",
+                        ));
+                    }
                 } else {
-                    self.queue
-                        .push_back(ModelEvent::Completed { finish_reason });
+                    self.push(ModelEvent::Completed { stop_reason });
                     self.finished = true;
                 }
             }
@@ -202,6 +250,7 @@ impl State {
     }
 }
 
+#[async_trait::async_trait]
 impl ModelAdapter for MockAdapter {
     fn capabilities(&self, _profile: &ModelProfile) -> ModelCapabilities {
         self.capabilities.clone()
@@ -236,10 +285,13 @@ impl ModelAdapter for MockAdapter {
         };
         let items: VecDeque<ScriptItem> = match self.turns.get(turn) {
             Some(script) => script.iter().cloned().collect(),
-            None => VecDeque::from([ScriptStep::Fail(ElfError::ExternalFailure {
-                message: format!("mock script exhausted at stream call {}", turn + 1),
-                retryable: false,
-            })
+            None => VecDeque::from([ScriptStep::Fail(
+                ModelError::new(
+                    ModelErrorKind::Other,
+                    format!("mock script exhausted at stream call {}", turn + 1),
+                )
+                .with_retryable(false),
+            )
             .into()]),
         };
         let state = State {
@@ -251,6 +303,7 @@ impl ModelAdapter for MockAdapter {
             cancel,
             queue: VecDeque::new(),
             finished: false,
+            emitted: false,
         };
         futures::stream::unfold(state, |mut st| async move {
             loop {
@@ -271,25 +324,18 @@ impl ModelAdapter for MockAdapter {
 mod tests {
     use super::*;
     use crate::ports::fakes::FakeClock;
-    use crate::schema::RequestId;
+    use crate::schema::ElfError;
     use futures::StreamExt;
     use serde_json::json;
 
     fn request() -> ModelRequest {
-        ModelRequest {
-            model_profile_id: "p".into(),
-            instructions: "i".into(),
-            messages: vec![Message::text(Role::User, "hi")],
-            tools: vec![ToolSpec {
-                name: "write_note".into(),
-                description: "d".into(),
-                parameters_schema: json!({"type":"object","required":["title"]}),
-            }],
-            output_contract: None,
-            output_budget: None,
-            deadline: None,
-            request_id: RequestId::new(),
-        }
+        let mut r = ModelRequest::new("p", "i", vec![Message::text(Role::User, "hi")]);
+        r.tools = vec![ToolSpec {
+            name: "write_note".into(),
+            description: "d".into(),
+            parameters_schema: json!({"type":"object","required":["title"]}),
+        }];
+        r
     }
 
     fn frag(id: &str, name: Option<&str>, f: &str) -> ScriptItem {
@@ -322,11 +368,11 @@ mod tests {
             vec![
                 vec![
                     ScriptStep::Text("one".into()).into(),
-                    ScriptStep::Complete(FinishReason::Stop).into(),
+                    ScriptStep::Complete(StopReason::EndTurn).into(),
                 ],
                 vec![
                     ScriptStep::Text("two".into()).into(),
-                    ScriptStep::Complete(FinishReason::Stop).into(),
+                    ScriptStep::Complete(StopReason::EndTurn).into(),
                 ],
             ],
         );
@@ -343,12 +389,7 @@ mod tests {
         let evs = collect(&a).await;
         assert!(matches!(
             evs.last(),
-            Some(ModelEvent::Failed {
-                error: ElfError::ExternalFailure {
-                    retryable: false,
-                    ..
-                }
-            })
+            Some(ModelEvent::Failed { error }) if !error.retryable
         ));
         assert_eq!(a.recorded_requests().len(), 3);
     }
@@ -366,7 +407,7 @@ mod tests {
                 ..Default::default()
             })
             .into(),
-            ScriptStep::Complete(FinishReason::ToolCalls).into(),
+            ScriptStep::Complete(StopReason::ToolUse).into(),
         ]);
         let evs = collect(&a).await;
         let ready_pos = evs
@@ -397,7 +438,7 @@ mod tests {
         assert!(matches!(
             evs.last(),
             Some(ModelEvent::Completed {
-                finish_reason: FinishReason::ToolCalls
+                stop_reason: StopReason::ToolUse
             })
         ));
         assert_eq!(a.recorded_requests().len(), 1);
@@ -409,23 +450,40 @@ mod tests {
         let evs = collect(&adapter(vec![
             frag("c1", Some("write_note"), "{\"title\":"),
             end("c1"),
-            ScriptStep::Complete(FinishReason::ToolCalls).into(),
+            ScriptStep::Complete(StopReason::ToolUse).into(),
         ]))
         .await;
         assert!(!evs
             .iter()
             .any(|e| matches!(e, ModelEvent::ToolCallReady { .. })));
+        // the turn still completes: the call is rejected, not fatal
+        assert!(evs.iter().any(|e| matches!(
+            e,
+            ModelEvent::ToolCallRejected { reason, .. } if reason.contains("not valid JSON")
+        )));
+        assert!(matches!(evs.last(), Some(ModelEvent::Completed { .. })));
+
+        // output limit hits while a call is still streaming: rejected, turn completes
+        let evs = collect(&adapter(vec![
+            frag("c1", Some("write_note"), "{\"title\":\"x"),
+            ScriptStep::Complete(StopReason::MaxTokens).into(),
+        ]))
+        .await;
+        assert!(matches!(
+            &evs[evs.len() - 2],
+            ModelEvent::ToolCallRejected { .. }
+        ));
         assert!(matches!(
             evs.last(),
-            Some(ModelEvent::Failed {
-                error: ElfError::ExternalFailure { .. }
+            Some(ModelEvent::Completed {
+                stop_reason: StopReason::MaxTokens
             })
         ));
 
-        // completion arrives while the call is still unfinished
+        // completion arrives while the call is still unfinished and no limit was hit
         let evs = collect(&adapter(vec![
             frag("c1", Some("write_note"), "{\"title\":\"x\"}"),
-            ScriptStep::Complete(FinishReason::Stop).into(),
+            ScriptStep::Complete(StopReason::EndTurn).into(),
         ]))
         .await;
         assert!(!evs
@@ -459,7 +517,7 @@ mod tests {
             end("c1"),
             end("c1"),              // duplicate end without event id
             frag("c1", None, "{}"), // late fragment for a finished call
-            ScriptStep::Complete(FinishReason::ToolCalls).into(),
+            ScriptStep::Complete(StopReason::ToolUse).into(),
         ]);
         let evs = collect(&a).await;
         assert_eq!(
@@ -482,9 +540,12 @@ mod tests {
     async fn mid_stream_failure_and_missing_completion() {
         let evs = collect(&adapter(vec![
             ScriptStep::Text("par".into()).into(),
-            ScriptStep::Fail(ElfError::Timeout {
-                operation: "stream".into(),
-            })
+            ScriptStep::Fail(
+                ElfError::Timeout {
+                    operation: "stream".into(),
+                }
+                .into(),
+            )
             .into(),
             ScriptStep::Text("never".into()).into(),
         ]))
@@ -492,20 +553,14 @@ mod tests {
         assert_eq!(evs.len(), 2);
         assert!(matches!(
             &evs[1],
-            ModelEvent::Failed {
-                error: ElfError::Timeout { .. }
-            }
+            ModelEvent::Failed { error }
+                if error.kind == ModelErrorKind::Timeout && error.partial_output_emitted
         ));
 
         let evs = collect(&adapter(vec![ScriptStep::Text("x".into()).into()])).await;
         assert!(matches!(
             evs.last(),
-            Some(ModelEvent::Failed {
-                error: ElfError::ExternalFailure {
-                    retryable: true,
-                    ..
-                }
-            })
+            Some(ModelEvent::Failed { error }) if error.retryable && error.partial_output_emitted
         ));
     }
 
@@ -518,7 +573,7 @@ mod tests {
                 ScriptStep::Text("a".into()).into(),
                 ScriptStep::Delay(Duration::from_secs(30)).into(),
                 ScriptStep::Text("b".into()).into(),
-                ScriptStep::Complete(FinishReason::Stop).into(),
+                ScriptStep::Complete(StopReason::EndTurn).into(),
             ],
         );
         let mut s = a.stream(request(), CancellationToken::new());
@@ -544,7 +599,7 @@ mod tests {
         assert_eq!(
             evs,
             vec![ModelEvent::Failed {
-                error: ElfError::Cancelled
+                error: ModelError::cancelled()
             }]
         );
     }

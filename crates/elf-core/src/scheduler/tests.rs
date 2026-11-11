@@ -970,6 +970,7 @@ async fn corrupt_schedule_is_quarantined_and_does_not_block_others() {
                 recurrence: None,
                 misfire_policy: "coalesce".into(),
                 enabled: true,
+                deleted_at: None,
             })
             .unwrap();
     }
@@ -1267,4 +1268,214 @@ async fn schedule_round_trips_through_the_database_columns() {
     assert_eq!(row.misfire_policy, "coalesce");
     assert!(row.recurrence.unwrap().contains("FREQ=DAILY"));
     assert_eq!(row.next_run_at, Some(t("2026-11-12T01:00:00Z")));
+}
+
+// ---------------------------------------------------------------- soft delete (migration 0003)
+
+#[tokio::test]
+async fn deleting_a_schedule_keeps_its_delivery_history() {
+    let env = Env::at("2026-11-12T00:00:00Z");
+    let s = env
+        .sched
+        .create_schedule(daily("日報", "UTC", local(2026, 11, 12, 1, 0)))
+        .unwrap();
+    env.advance(3600);
+    env.sched.tick().await.unwrap();
+    env.advance(86_400);
+    env.sched.tick().await.unwrap();
+    let before = env.deliveries(&s.id);
+    assert_eq!(before.len(), 2);
+    assert!(before.iter().all(|d| d.status == DeliveryStatus::Delivered));
+
+    env.sched.delete_schedule(&s.id).unwrap();
+
+    // history is untouched and still queryable, also unfiltered and after a restart
+    assert_eq!(env.deliveries(&s.id), before);
+    let all = env
+        .sched
+        .list_deliveries(&DeliveryFilter::default())
+        .unwrap();
+    assert_eq!(all, before);
+    // the schedule row survives with its deletion time, so history can show its title
+    let kept = env.sched.get_schedule_including_deleted(&s.id).unwrap();
+    assert_eq!(kept.title, "日報");
+    assert_eq!(kept.deleted_at, Some(env.clock.now_utc()));
+    assert!(!kept.enabled);
+    assert_eq!(kept.next_run_at, None);
+}
+
+#[tokio::test]
+async fn deleted_schedules_are_hidden_by_default_and_listed_on_request() {
+    let env = Env::at("2026-11-12T00:00:00Z");
+    let keep = env
+        .sched
+        .create_schedule(one_shot("keep", "UTC", t("2026-11-12T05:00:00Z")))
+        .unwrap();
+    let gone = env
+        .sched
+        .create_schedule(one_shot("gone", "UTC", t("2026-11-12T06:00:00Z")))
+        .unwrap();
+    env.sched.delete_schedule(&gone.id).unwrap();
+
+    let ids = |v: Vec<Schedule>| v.into_iter().map(|s| s.id).collect::<Vec<_>>();
+    assert_eq!(
+        ids(env.sched.list_schedules().unwrap()),
+        vec![keep.id.clone()]
+    );
+    assert_eq!(
+        ids(env.sched.list_schedules_with(false).unwrap()),
+        vec![keep.id.clone()]
+    );
+    assert_eq!(
+        ids(env.sched.list_schedules_with(true).unwrap()),
+        vec![keep.id.clone(), gone.id.clone()]
+    );
+    // a deleted schedule is unknown to every mutating or loading call
+    assert!(env.sched.get_schedule(&gone.id).is_err());
+    assert!(env.sched.delete_schedule(&gone.id).is_err());
+    assert!(env.sched.set_enabled(&gone.id, true).is_err());
+    assert!(env
+        .sched
+        .update_schedule(
+            &gone.id,
+            ScheduleUpdate {
+                title: Some("x".into()),
+                ..Default::default()
+            }
+        )
+        .is_err());
+    // and the engine no longer plans around it
+    assert_eq!(
+        env.sched.db().earliest_next_run().unwrap(),
+        Some(t("2026-11-12T05:00:00Z"))
+    );
+}
+
+#[tokio::test]
+async fn deleted_schedule_never_fires_even_after_restart_or_a_long_sleep() {
+    let mut env = Env::at("2026-11-12T00:00:00Z");
+    let s = env
+        .sched
+        .create_schedule(daily("x", "UTC", local(2026, 11, 12, 1, 0)))
+        .unwrap();
+    env.sched.delete_schedule(&s.id).unwrap();
+    env.advance(3 * 86_400);
+    let r = env.sched.tick().await.unwrap();
+    assert_eq!((r.due, r.missed, r.needs_attention), (0, 0, 0));
+    env.restart();
+    env.sched.tick().await.unwrap();
+    env.advance(86_400);
+    env.sched.tick().await.unwrap();
+    assert!(env.sent().is_empty());
+    assert!(env.deliveries(&s.id).is_empty());
+}
+
+#[tokio::test]
+async fn schedule_deleted_while_the_engine_sleeps_does_not_fire_or_record() {
+    let env = Env::at("2026-11-12T00:00:00Z");
+    let s = env
+        .sched
+        .create_schedule(one_shot("x", "UTC", t("2026-11-12T01:00:00Z")))
+        .unwrap();
+    let token = CancellationToken::new();
+    let h = tokio::spawn({
+        let sc = env.sched.clone();
+        let tk = token.clone();
+        async move { sc.run(tk).await }
+    });
+    settle().await; // the loop is now asleep until 01:00
+    env.advance(1800);
+    env.sched.delete_schedule(&s.id).unwrap();
+    for _ in 0..130 {
+        env.advance(30);
+        settle().await;
+    }
+    assert!(env.sent().is_empty());
+    assert!(
+        env.deliveries(&s.id).is_empty(),
+        "nothing is recorded for a deleted schedule"
+    );
+    token.cancel();
+    h.await.unwrap().unwrap();
+}
+
+#[tokio::test]
+async fn deleting_cancels_undelivered_notifications_but_keeps_the_rows() {
+    let env = Env::at("2026-11-12T00:00:00Z");
+    let s = env
+        .sched
+        .create_schedule(one_shot("x", "UTC", t("2026-11-12T01:00:00Z")))
+        .unwrap();
+    env.advance(3600);
+    // phase 1 only: the row is written but nothing was notified yet (crash window)
+    let (report, _) = env.sched.commit_due(env.clock.now_utc()).unwrap();
+    assert_eq!(report.due, 1);
+    assert_eq!(env.deliveries(&s.id)[0].status, DeliveryStatus::Pending);
+
+    env.sched.delete_schedule(&s.id).unwrap();
+    env.sched.tick().await.unwrap();
+    assert!(env.sent().is_empty(), "a deleted reminder is not notified");
+    let d = env.deliveries(&s.id);
+    assert_eq!(d.len(), 1, "the trigger record is kept");
+    assert_eq!(d[0].status, DeliveryStatus::Cancelled);
+}
+
+#[tokio::test]
+async fn occurrence_uniqueness_still_applies_to_a_deleted_schedule() {
+    let env = Env::at("2026-11-12T00:00:00Z");
+    let s = env
+        .sched
+        .create_schedule(one_shot("x", "UTC", t("2026-11-12T01:00:00Z")))
+        .unwrap();
+    env.advance(3600);
+    env.sched.tick().await.unwrap();
+    env.sched.delete_schedule(&s.id).unwrap();
+    // the database refuses a duplicate (schedule_id, occurrence_key) outright
+    let dup = env.sched.db().conn.execute(
+        "INSERT INTO deliveries (id, schedule_id, occurrence_key, status) VALUES ('dup', ?1, ?2, 'pending')",
+        rusqlite::params![s.id.as_str(), ts_to_sql(&t("2026-11-12T01:00:00Z"))],
+    );
+    assert!(
+        dup.is_err(),
+        "UNIQUE (schedule_id, occurrence_key) must hold"
+    );
+    // and the engine-level insert records nothing for a deleted schedule
+    let inserted = env
+        .sched
+        .db()
+        .commit_occurrences(
+            s.id.as_str(),
+            &[NewDeliveryRow {
+                id: "n1".into(),
+                occurrence_key: ts_to_sql(&t("2026-11-13T01:00:00Z")),
+                status: "pending".into(),
+            }],
+            None,
+        )
+        .unwrap();
+    assert!(inserted.is_empty());
+    assert_eq!(env.deliveries(&s.id).len(), 1);
+}
+
+#[tokio::test]
+async fn a_delivery_of_a_deleted_schedule_cannot_be_snoozed() {
+    let env = Env::at("2026-11-12T00:00:00Z");
+    let s = env
+        .sched
+        .create_schedule(one_shot("x", "UTC", t("2026-11-12T01:00:00Z")))
+        .unwrap();
+    env.advance(3600);
+    env.sched.tick().await.unwrap();
+    let d = env.deliveries(&s.id)[0].clone();
+    env.sched.delete_schedule(&s.id).unwrap();
+    assert!(env
+        .sched
+        .snooze(&d.id, SnoozeUntil::After { secs: 600 })
+        .is_err());
+    assert_eq!(env.deliveries(&s.id)[0].status, DeliveryStatus::Delivered);
+    // history can still be closed out by the user
+    assert_eq!(
+        env.sched.mark_done(&d.id).unwrap().status,
+        DeliveryStatus::Done
+    );
 }

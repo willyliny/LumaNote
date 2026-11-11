@@ -40,11 +40,11 @@ use std::time::Duration;
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
-use crate::model::{MessagePart, ModelAdapter, ModelProfile, Role};
+use crate::model::{MessagePart, ModelAdapter, ModelProfile, ReasoningConfig, Role};
 use crate::policy::paths::resolve_target;
 use crate::ports::Clock;
 use crate::schema::{ApprovalId, ConversationId, ElfError, Result, TaskId};
-use crate::storage::grants::NewGrant;
+use crate::storage::grants::{GrantScope, NewGrant};
 use crate::storage::{Approval, NewTask, SharedStore, Task};
 use crate::task::{TaskLimits, TaskStatus};
 use crate::tools::create_todos::{TODOS_ACTION, TODOS_RESOURCE};
@@ -69,6 +69,15 @@ pub struct OrchestratorConfig {
     pub retry_backoff: Duration,
     /// Output token budget passed to the model, if any.
     pub output_budget: Option<u32>,
+    /// Longest silence tolerated in a model stream before the attempt fails.
+    pub model_idle_timeout: Duration,
+    /// Longest wait before a retry (backoff or the provider's `retry_after`); a longer
+    /// wait ends the attempt and pauses the task instead.
+    pub max_retry_wait: Duration,
+    /// `Some(false)` forbids parallel tool calls.
+    pub parallel_tool_calls: Option<bool>,
+    /// Reasoning settings passed to the model (`None` = provider default).
+    pub reasoning: Option<ReasoningConfig>,
 }
 
 impl Default for OrchestratorConfig {
@@ -89,6 +98,10 @@ impl Default for OrchestratorConfig {
             max_stream_retries: 2,
             retry_backoff: Duration::from_secs(1),
             output_budget: None,
+            model_idle_timeout: Duration::from_secs(120),
+            max_retry_wait: Duration::from_secs(120),
+            parallel_tool_calls: None,
+            reasoning: None,
         }
     }
 }
@@ -305,6 +318,8 @@ impl Orchestrator {
                         expires_at: None,
                         max_uses: None,
                         source_task: Some(task.id.clone()),
+                        // implied by this task's hand-over: usable by this task only
+                        scope: GrantScope::Task,
                     },
                     now,
                 )
@@ -353,6 +368,7 @@ impl Orchestrator {
                 expires_at: None,
                 max_uses: Some(1),
                 source_task: Some(approval.task_id.clone()),
+                scope: GrantScope::Task,
             });
             let resolved = s.resolve_approval(approval_id, grant.as_ref(), now)?;
             s.append_task_event(
