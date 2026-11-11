@@ -422,7 +422,17 @@ docs/
 7. 新增多 Agent 開發流程（第 17 章）。
 8. C1 審查後補充：verifying 可轉為 paused 與 cancelled；定義證據範圍、verifying 與 awaiting_user 的重啟規則、後續任務、上限執行者；tasks 增加 parent_task_id、limits_json、tool_call_count、started_at、untrusted_content。
 
-待技術查證後定案的項目：兩種協定的具體選擇、IPC 型別產生工具、Windows 通知在開發模式與安裝後的行為差異、憑證儲存套件。查證結果寫入 docs/research，定案後更新本手冊。
+R1 查證（docs/research/R1-tauri-windows.zh-TW.md）後定案與修正：
+
+- 版本鎖定 Tauri 2.x（3.0 已有 alpha，不採用）；系統匣用內建功能；憑證用 Windows 認證管理員，只在 src-tauri 存取；SQLite 用 rusqlite（bundled）；IPC 型別以 tauri-specta 產生，備案 ts-rs。確切版本號以查證報告為準。
+- 第 4 章：視窗狀態外掛保存的是實體座標，浮動入口的位置需自行以邏輯座標保存。
+- 第 10 章：Windows 認證管理員單筆上限 2560 位元組，較大的 OAuth token 需分段或改存加密檔，憑證庫只放金鑰。
+- 第 11 章：Windows 現代待命會暫停桌面程式，睡眠期間到期的提醒只能在喚醒後補送，依補送政策處理。
+- 第 11、14 章：系統通知在開發模式下顯示來源不正確，提醒的驗收必須用安裝版；排程一律由 Rust 排程器負責，通知外掛只負責顯示。安裝包因此提前到 D4 產出。
+- 第 14 章：隱藏視窗不會自動釋放 WebView2 記憶體；設定視窗關閉時銷毀，主面板的記憶體以實機量測後再決定做法。
+- 已知風險：不可取得焦點的浮動視窗無法接收鍵盤輸入，因此浮動入口只做點擊與拖曳，文字輸入一律在主面板。
+
+仍待定案的項目：兩種協定的具體選擇、IPC 型別產生工具、Windows 通知在開發模式與安裝後的行為差異、憑證儲存套件。查證結果寫入 docs/research，定案後更新本手冊。
 
 ## 17 多 Agent 開發流程
 
