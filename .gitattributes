@@ -1,0 +1,9 @@
+* text=auto
+# Stream fixtures are byte-exact test inputs: never convert line endings.
+*.sse binary
+*.http binary
+*.png binary
+*.ico binary
+*.webp binary
+*.sql text eol=lf
+*.rs text eol=lf

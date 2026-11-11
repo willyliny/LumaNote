@@ -1,6 +1,6 @@
 # Tauri AI 個人助理技術開發手冊
 
-版本：0.3　日期：2026 年 11 月 11 日　狀態：開發設計稿（一週衝刺版，修訂內容見第 16 章）
+版本：0.4　日期：2026 年 11 月 12 日　狀態：開發設計稿（一週衝刺版，修訂內容見第 16 章；實作現況見 docs/HANDOFF.zh-TW.md）
 
 本產品是一個可串接不同供應商 AI API、可在桌面交辦工作的個人助理。使用者能請它整理資訊、安排生活、研究問題、協助開發、製作文件，並持續追蹤待辦。取得使用者同意後，助理也會觀察有限的工作活動，整理可修正的習慣記憶，在合適時機詢問是否需要幫忙。模型供應商可替換，任務、工具、記憶與排程由本產品管理。
 
@@ -91,6 +91,16 @@ Tauri 的 capability 機制用來限制不同視窗可呼叫的介面；應用�
 系統匣提供開啟、暫停觀察、勿擾及結束；關閉主視窗可隱藏，選擇結束則停止所有本機背景工作。系統匣可用 Tauri 官方功能實作。[Tauri System Tray](https://tauri.app/learn/system-tray/)
 
 全域快捷鍵可由使用者設定；遇到快捷鍵衝突時顯示替代選擇。主動建議不得搶走輸入焦點；預設以浮動入口的小提示呈現。多螢幕位置用邏輯座標保存，啟動時檢查螢幕邊界，避免拔除外接螢幕後找不到視窗。
+
+### 4.1 浮動入口、輪盤與造型（0.4 新增，已實作）
+
+- 浮動入口顯示 96 像素的精靈，視窗 128 × 128，透明、無邊框、永遠在最上層、不取得鍵盤焦點。因為不取得焦點，浮動入口只支援滑鼠操作，文字輸入一律在主面板。
+- 輪盤：滑鼠停在精靈上約 0.25 秒後，視窗以精靈為中心放大到 344 × 344，周圍出現六個項目（對話、任務、今日、提醒、設定、勿擾），各自顯示即時資訊；離開約 0.3 秒後收合。項目清單是資料（src/features/floating/wheel-items.ts），之後可讓使用者自訂。
+- 拖曳：在精靈上按住並移動超過 4 像素時，由前端明確呼叫視窗拖曳；沒有移動就放開視為點擊。位置以邏輯座標連同螢幕資訊保存，螢幕不存在時回到主螢幕右下角。
+- 造型：六款可切換（leaf-cloak、moon-pebble、paper-lantern、night-letter、orbit-courier、prism-scribe），分屬 quiet-desk 與 night-voyage 兩個配色系列。造型決定配色系列，使用者的淺色、深色主題設定不受造型影響。造型只改外觀，不影響模型、任務、記憶與通知。
+- 每款造型有平面 SVG 與 2.5D 分層 PNG 兩套素材。64 像素以上且未開啟「減少動態」時使用分層版（漂浮、眨眼、傾斜，僅用位移、旋轉、縮放、透明度）；其餘情況用平面版。滑鼠 30 秒未靠近或視窗不可見時動畫暫停。
+- 素材進入前端前由 scripts/sync-skins.mjs 驗證：SVG 不得含腳本、內嵌點陣圖、外部連結；分層素材檢查尺寸、透明通道、層數上限 8、單款 600 KB 上限與檔名安全。不合格的分層素材自動退回平面版。
+- 視窗尺寸在前端（src/features/floating/layout.ts）與外殼（src-tauri/src/geometry.rs）各定義一次，由測試與建置前檢查確保一致。
 
 首次啟動先讓使用者完成一個交辦，再介紹可選的活動觀察。觀察關閉時，聊天、待辦、研究及明確排程仍可正常使用。
 
@@ -369,14 +379,15 @@ crates/elf-core/
   fixtures/             # 各協定的串流錄製檔
 src-tauri/
   capabilities/
-  src/commands/
-  src/observation/windows/
-  src/platform/         # 通知、憑證、系統匣
-  src/lib.rs
-docs/
-  research/
-  briefs/
-  archive/
+  src/lib.rs            # 視窗、系統匣、命令（目前）
+  src/floating.rs       # 浮動視窗展開、位置保存
+  src/geometry.rs       # 純幾何計算
+  src/commands/         # 規劃中：接上 elf-core 的 IPC 命令
+  src/observation/windows/  # 規劃中
+  src/platform/         # 規劃中：通知、憑證
+scripts/                # 造型素材同步與驗證、常數一致性檢查
+tests-ui/               # Playwright 介面檢查與截圖
+docs/                   # 見 docs/README.md
 ```
 
 前端命令建議：submit_task、cancel_task、get_task、list_tasks、respond_to_approval、set_observation_policy、list_memories、correct_memory、delete_memory、create_schedule。
@@ -466,6 +477,8 @@ R1 查證（docs/research/R1-tauri-windows.zh-TW.md）後定案與修正：
 - 已知風險：不可取得焦點的浮動視窗無法接收鍵盤輸入，因此浮動入口只做點擊與拖曳，文字輸入一律在主面板。
 
 仍待實機確認的項目：Windows 通知、浮動視窗焦點與多螢幕行為、WebView2 記憶體。查證結果寫入 docs/research，定案後更新本手冊。
+
+0.4（2026/11/12）：新增 4.1 浮動入口、輪盤與造型；更新專案結構；手冊移至 docs/。截至 0.4 的實作與驗證現況、未完成事項與已知風險，統一記錄在 docs/HANDOFF.zh-TW.md，本手冊只描述設計與規則。
 
 ## 17 多 Agent 開發流程
 

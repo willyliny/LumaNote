@@ -4,3 +4,5 @@ dist/
 tests-ui/screenshots/
 _sync.tar.gz
 _handoff/
+docs/design/.tools/
+*.log

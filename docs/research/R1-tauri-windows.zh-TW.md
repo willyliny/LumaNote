@@ -2,7 +2,7 @@
 
 - 工作包：R1（研究）
 - 查核日期：**2026-11-11**（以下所有「已查核」項目皆為此日期）
-- 對應手冊：`TECHNICAL_HANDBOOK.zh-TW.md` §3、§3.1、§4、§5、§10、§11、§12
+- 對應手冊：`docs/TECHNICAL_HANDBOOK.zh-TW.md` §3、§3.1、§4、§5、§10、§11、§12
 - 證據來源：crates.io API、npm registry、官方文件（v2.tauri.app、learn.microsoft.com、sqlite.org）、以及在對應 release tag 上直接讀取的原始碼。**沒有任何版本號或 API 形狀取自記憶。**
 - 標記方式：
   - **【事實】**：有來源可查的內容，來源可能是文件、registry 或原始碼。
