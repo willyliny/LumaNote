@@ -1,0 +1,20 @@
+: fixture: openai-chat-completions/06-local-whole-call-no-usage.sse   (extra; not in the required five)
+: protocol: "OpenAI-compatible" Chat Completions from a local server (vLLM / Ollama / LM Studio style), streaming
+: provenance: CONSTRUCTED by R2 to model documented third-party variations:
+:   - vLLM hf tool parser: "When streaming, each tool call is emitted whole once its region parses"
+:     (https://docs.vllm.ai/en/latest/features/tool_calling/, checked 2026-11-11)
+:   - usage chunk is only sent when stream_options.include_usage is honored; "If the stream is interrupted, you may not
+:     receive this final chunk" (OpenAI streaming-events reference, checked 2026-11-11). This fixture has no usage at all.
+:   - Ollama ignores the API key and does not support tool_choice (https://docs.ollama.com/api/openai-compatibility, checked 2026-11-11)
+: test intent: tool call arrives complete in ONE fragment; the stream has no usage chunk; the call id is in a non-OpenAI
+:   format. Adapter must still emit ToolCallReady at finish, and Usage must be reported as UNKNOWN (not zero).
+: expected ModelEvents: ToolCallReady(call_0, add_todo, {"title":"Buy milk","due":"2026-11-12"}), Completed(stop=tool_calls, usage=unknown)
+
+data: {"id":"chatcmpl-local-7","object":"chat.completion.chunk","created":1762848004,"model":"qwen3:8b","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-local-7","object":"chat.completion.chunk","created":1762848004,"model":"qwen3:8b","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_0","type":"function","function":{"name":"add_todo","arguments":"{\"title\":\"Buy milk\",\"due\":\"2026-11-12\"}"}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-local-7","object":"chat.completion.chunk","created":1762848004,"model":"qwen3:8b","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}
+
+data: [DONE]
+

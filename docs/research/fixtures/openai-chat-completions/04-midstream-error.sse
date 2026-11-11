@@ -1,0 +1,21 @@
+: fixture: openai-chat-completions/04-midstream-error.sse
+: protocol: OpenAI Chat Completions, streaming; HTTP 200, then an error object arrives as a data payload, then the stream ends
+: provenance: CONSTRUCTED by R2. The OpenAI API reference does NOT document a mid-stream error payload for Chat Completions
+:   (checked 2026-11-11). The shape used here — a data line whose JSON has a top-level "error" object with
+:   message/type/param/code — is inferred from:
+:   - the official Python SDK, which raises APIError when an SSE data payload "is_mapping(data) and data.get("error")"
+:     (https://raw.githubusercontent.com/openai/openai-python/main/src/openai/_streaming.py, checked 2026-11-11)
+:   - the documented non-stream error fields error.code / error.type / error.param
+:     (https://developers.openai.com/api/docs/guides/error-codes, checked 2026-11-11)
+: other servers differ: OpenRouter documents an "error" object on choices with code/message/metadata and normalises
+:   finish_reason to "error" (https://openrouter.ai/docs/api/reference/overview); Ollama's docs do not specify.
+: note: no [DONE] and no usage chunk follow. Treat EOF without [DONE] and without finish_reason as a disconnect.
+: note: the partial tool call (index 0) never completes. It MUST NOT produce ToolCallReady.
+: expected ModelEvents: TextDelta("Let me check"), Failed(kind=server_error, retryable=true, partial_output_emitted=true). Usage unknown.
+
+data: {"id":"chatcmpl-FIXTURE0004","object":"chat.completion.chunk","created":1762848003,"model":"gpt-5.5","choices":[{"index":0,"delta":{"role":"assistant","content":"Let me check"},"logprobs":null,"finish_reason":null}],"usage":null}
+
+data: {"id":"chatcmpl-FIXTURE0004","object":"chat.completion.chunk","created":1762848003,"model":"gpt-5.5","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_FIXTUREerr","type":"function","function":{"name":"read_file","arguments":"{\"path\": \"C:/Us"}}]},"logprobs":null,"finish_reason":null}],"usage":null}
+
+data: {"error":{"message":"The server had an error while processing your request.","type":"server_error","param":null,"code":null}}
+

@@ -160,6 +160,19 @@ ModelEvent
   Usage | Completed | Failed
 ```
 
+契約補充（0.3，依 R2 查證；詳見 docs/research/R2-model-protocols.zh-TW.md）：
+
+- 第一版實作 Anthropic Messages 與 OpenAI Chat Completions 兩種協定。後者同時涵蓋多數相容服務與本機模型端點；OpenAI Responses 與 Gemini 原生協定列為後續。
+- ModelEvent 增加 ResponseStarted（請求 ID、實際模型）、ReasoningDelta（思考內容，不得混入 TextDelta）、ProviderState（供應商不透明狀態，如思考區塊簽章）。
+- Completed 帶結束原因：正常結束、工具呼叫、達輸出上限、停止序列、超出脈絡、拒絕、內容過濾、其他。達輸出上限與超出脈絡不算成功。
+- Failed 帶錯誤類別、是否可重試、retry_after、HTTP 狀態、供應商錯誤碼、請求 ID、是否已輸出部分內容。已輸出部分內容的串流不自動重播。額度或帳務錯誤不重試。
+- Usage 定義為累計快照，以最後一筆為準；快取讀取、快取寫入、思考 token 分欄保存，所有欄位可為未知。
+- ModelRequest 增加 tool_choice、parallel_tool_calls、停止序列、思考設定；工具結果帶 is_error；每個助理回合可附 provider_state 與來源供應商標記。
+- ProviderState 由協調器隨該助理回合依原順序保存，只回傳給同一供應商。切換供應商只能在一輪工具呼叫完整結束之後。
+- 取消時適配器發出 Failed（cancelled）；整體期限與閒置逾時分開設定。
+- 能力宣告增加：最大輸出、是否支援平行工具、支援的 tool_choice 模式、是否必須回傳不透明狀態、串流是否提供用量。
+- 適配器不得送出該模型版本不接受的取樣參數；Chat Completions 沒有逐個工具呼叫的完成訊號，ToolCallReady 於 finish_reason 出現時才發出。
+
 messages 使用本產品的文字、圖片參照、工具呼叫及工具結果結構。適配器負責轉換角色、參數名稱、串流格式、結束原因及錯誤。工具參數片段必須完整組裝、解析並驗證後，才能產生 ToolCallReady；不能執行半截串流內容。保留工具呼叫 ID 與結果配對，對重複事件去重。
 
 供應商限定的 opaque continuation 資料可隔離保存於該適配器，不傳給另一家；跨供應商恢復時以本機任務事實、已完成工具結果與必要對話摘要重建脈絡。不可只保存供應商 conversation ID 作為唯一歷史。
@@ -432,7 +445,7 @@ R1 查證（docs/research/R1-tauri-windows.zh-TW.md）後定案與修正：
 - 第 14 章：隱藏視窗不會自動釋放 WebView2 記憶體；設定視窗關閉時銷毀，主面板的記憶體以實機量測後再決定做法。
 - 已知風險：不可取得焦點的浮動視窗無法接收鍵盤輸入，因此浮動入口只做點擊與拖曳，文字輸入一律在主面板。
 
-仍待定案的項目：兩種協定的具體選擇、IPC 型別產生工具、Windows 通知在開發模式與安裝後的行為差異、憑證儲存套件。查證結果寫入 docs/research，定案後更新本手冊。
+仍待實機確認的項目：Windows 通知、浮動視窗焦點與多螢幕行為、WebView2 記憶體。查證結果寫入 docs/research，定案後更新本手冊。
 
 ## 17 多 Agent 開發流程
 

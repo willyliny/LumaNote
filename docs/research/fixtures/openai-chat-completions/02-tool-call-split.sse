@@ -1,0 +1,34 @@
+: fixture: openai-chat-completions/02-tool-call-split.sse
+: protocol: OpenAI Chat Completions, streaming, one function tool call, include_usage=true
+: provenance: CONSTRUCTED by R2 from documented behavior. IDs/timestamps invented.
+: sources (checked 2026-11-11):
+:   https://developers.openai.com/api/docs/guides/function-calling  (first delta carries index, id, function.name, type;
+:     later deltas have id/name null and carry function.arguments fragments; accumulate by index:
+:     accumulated.function.arguments += toolCall.function?.arguments ?? "")
+:   https://developers.openai.com/api/reference/resources/chat/subresources/completions/streaming-events
+:     ("arguments ... may be invalid JSON, so validate them before calling a function"; finish_reason "tool_calls")
+: test intent: arguments split mid-key and mid-string; id/name/type appear only on the first fragment and are explicitly
+:   null afterwards (adapter must not overwrite a known id with null). No signal marks one call complete except
+:   finish_reason (or, for parallel calls, a higher index appearing). Parse and validate only at finish.
+: expected ModelEvents: ToolCallDelta(id=call_FIXTUREa1b2c3, name=get_weather) xN,
+:   ToolCallReady(call_FIXTUREa1b2c3, get_weather, {"location":"San Francisco, CA","unit":"fahrenheit"}),
+:   Usage(input=82, output=18), Completed(stop=tool_calls)
+
+data: {"id":"chatcmpl-FIXTURE0002","object":"chat.completion.chunk","created":1762848001,"model":"gpt-5.5","choices":[{"index":0,"delta":{"role":"assistant","content":null,"tool_calls":[{"index":0,"id":"call_FIXTUREa1b2c3","type":"function","function":{"name":"get_weather","arguments":""}}],"refusal":null},"logprobs":null,"finish_reason":null}],"usage":null}
+
+data: {"id":"chatcmpl-FIXTURE0002","object":"chat.completion.chunk","created":1762848001,"model":"gpt-5.5","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":null,"function":{"arguments":"{\"","name":null},"type":null}]},"logprobs":null,"finish_reason":null}],"usage":null}
+
+data: {"id":"chatcmpl-FIXTURE0002","object":"chat.completion.chunk","created":1762848001,"model":"gpt-5.5","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":null,"function":{"arguments":"location","name":null},"type":null}]},"logprobs":null,"finish_reason":null}],"usage":null}
+
+data: {"id":"chatcmpl-FIXTURE0002","object":"chat.completion.chunk","created":1762848001,"model":"gpt-5.5","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":null,"function":{"arguments":"\":\"San Fr","name":null},"type":null}]},"logprobs":null,"finish_reason":null}],"usage":null}
+
+data: {"id":"chatcmpl-FIXTURE0002","object":"chat.completion.chunk","created":1762848001,"model":"gpt-5.5","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":null,"function":{"arguments":"ancisco, CA\",\"un","name":null},"type":null}]},"logprobs":null,"finish_reason":null}],"usage":null}
+
+data: {"id":"chatcmpl-FIXTURE0002","object":"chat.completion.chunk","created":1762848001,"model":"gpt-5.5","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":null,"function":{"arguments":"it\":\"fahrenheit\"}","name":null},"type":null}]},"logprobs":null,"finish_reason":null}],"usage":null}
+
+data: {"id":"chatcmpl-FIXTURE0002","object":"chat.completion.chunk","created":1762848001,"model":"gpt-5.5","choices":[{"index":0,"delta":{},"logprobs":null,"finish_reason":"tool_calls"}],"usage":null}
+
+data: {"id":"chatcmpl-FIXTURE0002","object":"chat.completion.chunk","created":1762848001,"model":"gpt-5.5","choices":[],"usage":{"prompt_tokens":82,"completion_tokens":18,"total_tokens":100,"prompt_tokens_details":{"cached_tokens":0},"completion_tokens_details":{"reasoning_tokens":0}}}
+
+data: [DONE]
+
