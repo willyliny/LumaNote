@@ -1,0 +1,10 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main",
+  "description": "Main panel: app info and opening the settings window.",
+  "windows": ["main"],
+  "permissions": [
+    "allow-app-info",
+    "allow-open-window"
+  ]
+}

@@ -6,6 +6,17 @@ import react from '@vitejs/plugin-react';
 export default defineConfig({
   plugins: [react()],
   base: './',
+  // Tauri dev needs a fixed address: src-tauri/tauri.conf.json build.devUrl points here.
+  // 127.0.0.1 (not "localhost") avoids IPv4/IPv6 mismatches on Windows.
+  clearScreen: false,
+  server: {
+    host: '127.0.0.1',
+    port: 5173,
+    strictPort: true,
+    watch: { ignored: ['**/src-tauri/**', '**/target/**', '**/crates/**'] },
+  },
+  // keep `vite preview` (used by tests-ui screenshots) on its previous host
+  preview: { host: 'localhost' },
   build: {
     rollupOptions: {
       input: {

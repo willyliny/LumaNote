@@ -1,0 +1,9 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "settings",
+  "description": "Settings window: app info only for now.",
+  "windows": ["settings"],
+  "permissions": [
+    "allow-app-info"
+  ]
+}
