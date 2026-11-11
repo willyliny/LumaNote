@@ -1289,7 +1289,7 @@ export function createMockIpc(): IpcClient {
       const file = label === 'panel' ? 'panel.html' : 'settings.html';
       const q = tab ? `?tab=${encodeURIComponent(tab)}` : '';
       const size = label === 'panel' ? 'width=440,height=720' : 'width=760,height=760';
-      window.open(`./${file}${q}`, `elf-${label}`, size);
+      window.open(`./${file}${q}`, `luma-${label}`, size);
       return {};
     },
   };

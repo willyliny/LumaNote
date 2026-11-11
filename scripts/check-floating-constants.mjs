@@ -75,6 +75,22 @@ for (const s of [1, 1.25, 1.5, 2]) {
   if (!Number.isInteger(d)) errors.push(`at ${s * 100}% scaling the expanded window cannot be centred on whole physical pixels (${d})`);
 }
 
+// The mock backend opens windows by target name and the native shim maps those names to real
+// Tauri windows. If the two disagree, every "open panel / open settings" button silently does nothing
+// inside the desktop app while still working in a browser.
+{
+  const fsMod = await import('node:fs');
+  const mock = fsMod.readFileSync(new URL('../src/lib/ipc-mock.ts', import.meta.url), 'utf8');
+  const shim = fsMod.readFileSync(new URL('../src/lib/ipc-tauri.ts', import.meta.url), 'utf8');
+  const m = mock.match(/window\.open\(`[^`]*`, `([a-z]+)-\$\{label\}`/);
+  const shimTargets = [...shim.matchAll(/'([a-z]+-(?:panel|settings))': '/g)].map((x) => x[1]);
+  if (!m) errors.push('ipc-mock.ts: could not find the window.open target used by open_window');
+  else
+    for (const label of ['panel', 'settings'])
+      if (!shimTargets.includes(`${m[1]}-${label}`))
+        errors.push(`ipc-tauri.ts does not map the mock window target "${m[1]}-${label}" (it maps: ${shimTargets.join(', ') || 'none'})`);
+}
+
 if (errors.length) {
   console.error('floating constants check FAILED\n - ' + errors.join('\n - '));
   process.exit(1);
