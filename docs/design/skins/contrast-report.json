@@ -1,0 +1,394 @@
+[
+  {
+    "scope": "night-voyage",
+    "theme": "light",
+    "fg": "text",
+    "bg": "canvas",
+    "ratio": 13.782
+  },
+  {
+    "scope": "night-voyage",
+    "theme": "light",
+    "fg": "muted",
+    "bg": "canvas",
+    "ratio": 6.45
+  },
+  {
+    "scope": "night-voyage",
+    "theme": "light",
+    "fg": "primary",
+    "bg": "canvas",
+    "ratio": 6.417
+  },
+  {
+    "scope": "night-voyage",
+    "theme": "light",
+    "fg": "secondary",
+    "bg": "canvas",
+    "ratio": 7.17
+  },
+  {
+    "scope": "night-voyage",
+    "theme": "light",
+    "fg": "success",
+    "bg": "canvas",
+    "ratio": 6.733
+  },
+  {
+    "scope": "night-voyage",
+    "theme": "light",
+    "fg": "warning",
+    "bg": "canvas",
+    "ratio": 6.298
+  },
+  {
+    "scope": "night-voyage",
+    "theme": "light",
+    "fg": "error",
+    "bg": "canvas",
+    "ratio": 6.422
+  },
+  {
+    "scope": "night-voyage",
+    "theme": "light",
+    "fg": "text",
+    "bg": "surface",
+    "ratio": 14.967
+  },
+  {
+    "scope": "night-voyage",
+    "theme": "light",
+    "fg": "muted",
+    "bg": "surface",
+    "ratio": 7.004
+  },
+  {
+    "scope": "night-voyage",
+    "theme": "light",
+    "fg": "primary",
+    "bg": "surface",
+    "ratio": 6.969
+  },
+  {
+    "scope": "night-voyage",
+    "theme": "light",
+    "fg": "secondary",
+    "bg": "surface",
+    "ratio": 7.787
+  },
+  {
+    "scope": "night-voyage",
+    "theme": "light",
+    "fg": "success",
+    "bg": "surface",
+    "ratio": 7.312
+  },
+  {
+    "scope": "night-voyage",
+    "theme": "light",
+    "fg": "warning",
+    "bg": "surface",
+    "ratio": 6.839
+  },
+  {
+    "scope": "night-voyage",
+    "theme": "light",
+    "fg": "error",
+    "bg": "surface",
+    "ratio": 6.974
+  },
+  {
+    "scope": "night-voyage",
+    "theme": "light",
+    "fg": "text",
+    "bg": "subtle",
+    "ratio": 12.605
+  },
+  {
+    "scope": "night-voyage",
+    "theme": "light",
+    "fg": "muted",
+    "bg": "subtle",
+    "ratio": 5.899
+  },
+  {
+    "scope": "night-voyage",
+    "theme": "light",
+    "fg": "primary",
+    "bg": "subtle",
+    "ratio": 5.869
+  },
+  {
+    "scope": "night-voyage",
+    "theme": "light",
+    "fg": "secondary",
+    "bg": "subtle",
+    "ratio": 6.558
+  },
+  {
+    "scope": "night-voyage",
+    "theme": "light",
+    "fg": "success",
+    "bg": "subtle",
+    "ratio": 6.158
+  },
+  {
+    "scope": "night-voyage",
+    "theme": "light",
+    "fg": "warning",
+    "bg": "subtle",
+    "ratio": 5.76
+  },
+  {
+    "scope": "night-voyage",
+    "theme": "light",
+    "fg": "error",
+    "bg": "subtle",
+    "ratio": 5.873
+  },
+  {
+    "scope": "night-voyage",
+    "theme": "light",
+    "fg": "onPrimary",
+    "bg": "primary",
+    "ratio": 6.969
+  },
+  {
+    "scope": "night-voyage",
+    "theme": "dark",
+    "fg": "text",
+    "bg": "canvas",
+    "ratio": 17.235
+  },
+  {
+    "scope": "night-voyage",
+    "theme": "dark",
+    "fg": "muted",
+    "bg": "canvas",
+    "ratio": 10.755
+  },
+  {
+    "scope": "night-voyage",
+    "theme": "dark",
+    "fg": "primary",
+    "bg": "canvas",
+    "ratio": 12.846
+  },
+  {
+    "scope": "night-voyage",
+    "theme": "dark",
+    "fg": "secondary",
+    "bg": "canvas",
+    "ratio": 10.605
+  },
+  {
+    "scope": "night-voyage",
+    "theme": "dark",
+    "fg": "success",
+    "bg": "canvas",
+    "ratio": 13.254
+  },
+  {
+    "scope": "night-voyage",
+    "theme": "dark",
+    "fg": "warning",
+    "bg": "canvas",
+    "ratio": 13.141
+  },
+  {
+    "scope": "night-voyage",
+    "theme": "dark",
+    "fg": "error",
+    "bg": "canvas",
+    "ratio": 10.576
+  },
+  {
+    "scope": "night-voyage",
+    "theme": "dark",
+    "fg": "text",
+    "bg": "surface",
+    "ratio": 15.265
+  },
+  {
+    "scope": "night-voyage",
+    "theme": "dark",
+    "fg": "muted",
+    "bg": "surface",
+    "ratio": 9.525
+  },
+  {
+    "scope": "night-voyage",
+    "theme": "dark",
+    "fg": "primary",
+    "bg": "surface",
+    "ratio": 11.377
+  },
+  {
+    "scope": "night-voyage",
+    "theme": "dark",
+    "fg": "secondary",
+    "bg": "surface",
+    "ratio": 9.393
+  },
+  {
+    "scope": "night-voyage",
+    "theme": "dark",
+    "fg": "success",
+    "bg": "surface",
+    "ratio": 11.739
+  },
+  {
+    "scope": "night-voyage",
+    "theme": "dark",
+    "fg": "warning",
+    "bg": "surface",
+    "ratio": 11.639
+  },
+  {
+    "scope": "night-voyage",
+    "theme": "dark",
+    "fg": "error",
+    "bg": "surface",
+    "ratio": 9.367
+  },
+  {
+    "scope": "night-voyage",
+    "theme": "dark",
+    "fg": "text",
+    "bg": "subtle",
+    "ratio": 12.838
+  },
+  {
+    "scope": "night-voyage",
+    "theme": "dark",
+    "fg": "muted",
+    "bg": "subtle",
+    "ratio": 8.011
+  },
+  {
+    "scope": "night-voyage",
+    "theme": "dark",
+    "fg": "primary",
+    "bg": "subtle",
+    "ratio": 9.568
+  },
+  {
+    "scope": "night-voyage",
+    "theme": "dark",
+    "fg": "secondary",
+    "bg": "subtle",
+    "ratio": 7.899
+  },
+  {
+    "scope": "night-voyage",
+    "theme": "dark",
+    "fg": "success",
+    "bg": "subtle",
+    "ratio": 9.873
+  },
+  {
+    "scope": "night-voyage",
+    "theme": "dark",
+    "fg": "warning",
+    "bg": "subtle",
+    "ratio": 9.788
+  },
+  {
+    "scope": "night-voyage",
+    "theme": "dark",
+    "fg": "error",
+    "bg": "subtle",
+    "ratio": 7.878
+  },
+  {
+    "scope": "night-voyage",
+    "theme": "dark",
+    "fg": "onPrimary",
+    "bg": "primary",
+    "ratio": 10.964
+  },
+  {
+    "scope": "leaf-cloak",
+    "theme": "light",
+    "fg": "onAccent",
+    "bg": "accent",
+    "ratio": 7.471
+  },
+  {
+    "scope": "leaf-cloak",
+    "theme": "dark",
+    "fg": "onAccent",
+    "bg": "accent",
+    "ratio": 10.014
+  },
+  {
+    "scope": "moon-pebble",
+    "theme": "light",
+    "fg": "onAccent",
+    "bg": "accent",
+    "ratio": 8.265
+  },
+  {
+    "scope": "moon-pebble",
+    "theme": "dark",
+    "fg": "onAccent",
+    "bg": "accent",
+    "ratio": 10.46
+  },
+  {
+    "scope": "paper-lantern",
+    "theme": "light",
+    "fg": "onAccent",
+    "bg": "accent",
+    "ratio": 6.76
+  },
+  {
+    "scope": "paper-lantern",
+    "theme": "dark",
+    "fg": "onAccent",
+    "bg": "accent",
+    "ratio": 10.258
+  },
+  {
+    "scope": "night-letter",
+    "theme": "light",
+    "fg": "onAccent",
+    "bg": "accent",
+    "ratio": 6.969
+  },
+  {
+    "scope": "night-letter",
+    "theme": "dark",
+    "fg": "onAccent",
+    "bg": "accent",
+    "ratio": 10.964
+  },
+  {
+    "scope": "orbit-courier",
+    "theme": "light",
+    "fg": "onAccent",
+    "bg": "accent",
+    "ratio": 6.839
+  },
+  {
+    "scope": "orbit-courier",
+    "theme": "dark",
+    "fg": "onAccent",
+    "bg": "accent",
+    "ratio": 11.015
+  },
+  {
+    "scope": "prism-scribe",
+    "theme": "light",
+    "fg": "onAccent",
+    "bg": "accent",
+    "ratio": 7.312
+  },
+  {
+    "scope": "prism-scribe",
+    "theme": "dark",
+    "fg": "onAccent",
+    "bg": "accent",
+    "ratio": 10.54
+  }
+]

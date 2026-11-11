@@ -1,0 +1,2131 @@
+{
+  "status": "passed",
+  "pngCount": 118,
+  "svgBodyInvariant": true,
+  "checks": [
+    {
+      "file": "leaf-cloak\\idle-48.png",
+      "size": 48,
+      "transparent": 1456,
+      "opaque": 757,
+      "bounds": [
+        9,
+        8,
+        39,
+        41
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "leaf-cloak\\idle-96.png",
+      "size": 96,
+      "transparent": 5898,
+      "opaque": 3136,
+      "bounds": [
+        18,
+        16,
+        78,
+        83
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "leaf-cloak\\idle-192.png",
+      "size": 192,
+      "transparent": 23770,
+      "opaque": 12725,
+      "bounds": [
+        37,
+        32,
+        157,
+        166
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "leaf-cloak\\listening-48.png",
+      "size": 48,
+      "transparent": 1304,
+      "opaque": 849,
+      "bounds": [
+        3,
+        8,
+        44,
+        41
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "leaf-cloak\\listening-96.png",
+      "size": 96,
+      "transparent": 5337,
+      "opaque": 3561,
+      "bounds": [
+        6,
+        16,
+        89,
+        83
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "leaf-cloak\\listening-192.png",
+      "size": 192,
+      "transparent": 21650,
+      "opaque": 14592,
+      "bounds": [
+        12,
+        32,
+        179,
+        166
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "leaf-cloak\\processing-48.png",
+      "size": 48,
+      "transparent": 1304,
+      "opaque": 864,
+      "bounds": [
+        9,
+        2,
+        39,
+        41
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "leaf-cloak\\processing-96.png",
+      "size": 96,
+      "transparent": 5337,
+      "opaque": 3596,
+      "bounds": [
+        18,
+        4,
+        78,
+        83
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "leaf-cloak\\processing-192.png",
+      "size": 192,
+      "transparent": 21614,
+      "opaque": 14697,
+      "bounds": [
+        36,
+        8,
+        157,
+        166
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "leaf-cloak\\approval-48.png",
+      "size": 48,
+      "transparent": 1288,
+      "opaque": 912,
+      "bounds": [
+        9,
+        8,
+        45,
+        45
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "leaf-cloak\\approval-96.png",
+      "size": 96,
+      "transparent": 5248,
+      "opaque": 3772,
+      "bounds": [
+        18,
+        16,
+        91,
+        91
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "leaf-cloak\\approval-192.png",
+      "size": 192,
+      "transparent": 21163,
+      "opaque": 15297,
+      "bounds": [
+        37,
+        32,
+        183,
+        183
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "leaf-cloak\\suggestion-48.png",
+      "size": 48,
+      "transparent": 1344,
+      "opaque": 839,
+      "bounds": [
+        9,
+        2,
+        46,
+        41
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "leaf-cloak\\suggestion-96.png",
+      "size": 96,
+      "transparent": 5480,
+      "opaque": 3496,
+      "bounds": [
+        18,
+        5,
+        93,
+        83
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "leaf-cloak\\suggestion-192.png",
+      "size": 192,
+      "transparent": 22158,
+      "opaque": 14233,
+      "bounds": [
+        37,
+        10,
+        187,
+        166
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "leaf-cloak\\paused-48.png",
+      "size": 48,
+      "transparent": 1288,
+      "opaque": 912,
+      "bounds": [
+        9,
+        8,
+        45,
+        45
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "leaf-cloak\\paused-96.png",
+      "size": 96,
+      "transparent": 5248,
+      "opaque": 3772,
+      "bounds": [
+        18,
+        16,
+        91,
+        91
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "leaf-cloak\\paused-192.png",
+      "size": 192,
+      "transparent": 21163,
+      "opaque": 15297,
+      "bounds": [
+        37,
+        32,
+        183,
+        183
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "leaf-cloak\\preview.png",
+      "size": 512,
+      "transparent": 169567,
+      "opaque": 91333,
+      "bounds": [
+        99,
+        85,
+        419,
+        443
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "moon-pebble\\idle-48.png",
+      "size": 48,
+      "transparent": 1397,
+      "opaque": 799,
+      "bounds": [
+        8,
+        7,
+        39,
+        42
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "moon-pebble\\idle-96.png",
+      "size": 96,
+      "transparent": 5683,
+      "opaque": 3313,
+      "bounds": [
+        16,
+        13,
+        78,
+        85
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "moon-pebble\\idle-192.png",
+      "size": 192,
+      "transparent": 22851,
+      "opaque": 13568,
+      "bounds": [
+        33,
+        27,
+        157,
+        171
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "moon-pebble\\listening-48.png",
+      "size": 48,
+      "transparent": 1243,
+      "opaque": 891,
+      "bounds": [
+        3,
+        7,
+        44,
+        42
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "moon-pebble\\listening-96.png",
+      "size": 96,
+      "transparent": 5122,
+      "opaque": 3738,
+      "bounds": [
+        6,
+        13,
+        89,
+        85
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "moon-pebble\\listening-192.png",
+      "size": 192,
+      "transparent": 20731,
+      "opaque": 15435,
+      "bounds": [
+        12,
+        27,
+        179,
+        171
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "moon-pebble\\processing-48.png",
+      "size": 48,
+      "transparent": 1247,
+      "opaque": 906,
+      "bounds": [
+        8,
+        2,
+        39,
+        42
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "moon-pebble\\processing-96.png",
+      "size": 96,
+      "transparent": 5124,
+      "opaque": 3775,
+      "bounds": [
+        16,
+        4,
+        78,
+        85
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "moon-pebble\\processing-192.png",
+      "size": 192,
+      "transparent": 20706,
+      "opaque": 15542,
+      "bounds": [
+        33,
+        8,
+        157,
+        171
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "moon-pebble\\approval-48.png",
+      "size": 48,
+      "transparent": 1242,
+      "opaque": 947,
+      "bounds": [
+        8,
+        7,
+        45,
+        45
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "moon-pebble\\approval-96.png",
+      "size": 96,
+      "transparent": 5073,
+      "opaque": 3917,
+      "bounds": [
+        16,
+        13,
+        91,
+        91
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "moon-pebble\\approval-192.png",
+      "size": 192,
+      "transparent": 20414,
+      "opaque": 15988,
+      "bounds": [
+        33,
+        27,
+        183,
+        183
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "moon-pebble\\suggestion-48.png",
+      "size": 48,
+      "transparent": 1285,
+      "opaque": 883,
+      "bounds": [
+        8,
+        2,
+        46,
+        42
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "moon-pebble\\suggestion-96.png",
+      "size": 96,
+      "transparent": 5263,
+      "opaque": 3677,
+      "bounds": [
+        16,
+        5,
+        93,
+        85
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "moon-pebble\\suggestion-192.png",
+      "size": 192,
+      "transparent": 21238,
+      "opaque": 15085,
+      "bounds": [
+        33,
+        10,
+        187,
+        171
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "moon-pebble\\paused-48.png",
+      "size": 48,
+      "transparent": 1242,
+      "opaque": 947,
+      "bounds": [
+        8,
+        7,
+        45,
+        45
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "moon-pebble\\paused-96.png",
+      "size": 96,
+      "transparent": 5073,
+      "opaque": 3917,
+      "bounds": [
+        16,
+        13,
+        91,
+        91
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "moon-pebble\\paused-192.png",
+      "size": 192,
+      "transparent": 20414,
+      "opaque": 15988,
+      "bounds": [
+        33,
+        27,
+        183,
+        183
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "moon-pebble\\preview.png",
+      "size": 512,
+      "transparent": 163514,
+      "opaque": 97038,
+      "bounds": [
+        89,
+        73,
+        421,
+        457
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "paper-lantern\\idle-48.png",
+      "size": 48,
+      "transparent": 1521,
+      "opaque": 698,
+      "bounds": [
+        9,
+        9,
+        38,
+        41
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "paper-lantern\\idle-96.png",
+      "size": 96,
+      "transparent": 6182,
+      "opaque": 2858,
+      "bounds": [
+        19,
+        19,
+        76,
+        82
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "paper-lantern\\idle-192.png",
+      "size": 192,
+      "transparent": 24889,
+      "opaque": 11628,
+      "bounds": [
+        38,
+        38,
+        153,
+        165
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "paper-lantern\\listening-48.png",
+      "size": 48,
+      "transparent": 1366,
+      "opaque": 790,
+      "bounds": [
+        3,
+        9,
+        44,
+        41
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "paper-lantern\\listening-96.png",
+      "size": 96,
+      "transparent": 5621,
+      "opaque": 3283,
+      "bounds": [
+        6,
+        19,
+        89,
+        82
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "paper-lantern\\listening-192.png",
+      "size": 192,
+      "transparent": 22769,
+      "opaque": 13495,
+      "bounds": [
+        12,
+        38,
+        179,
+        165
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "paper-lantern\\processing-48.png",
+      "size": 48,
+      "transparent": 1351,
+      "opaque": 813,
+      "bounds": [
+        9,
+        2,
+        38,
+        41
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "paper-lantern\\processing-96.png",
+      "size": 96,
+      "transparent": 5547,
+      "opaque": 3368,
+      "bounds": [
+        18,
+        4,
+        76,
+        82
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "paper-lantern\\processing-192.png",
+      "size": 192,
+      "transparent": 22453,
+      "opaque": 13835,
+      "bounds": [
+        36,
+        8,
+        153,
+        165
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "paper-lantern\\approval-48.png",
+      "size": 48,
+      "transparent": 1332,
+      "opaque": 872,
+      "bounds": [
+        9,
+        9,
+        45,
+        45
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "paper-lantern\\approval-96.png",
+      "size": 96,
+      "transparent": 5442,
+      "opaque": 3581,
+      "bounds": [
+        19,
+        19,
+        91,
+        91
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "paper-lantern\\approval-192.png",
+      "size": 192,
+      "transparent": 21922,
+      "opaque": 14553,
+      "bounds": [
+        38,
+        38,
+        183,
+        183
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "paper-lantern\\suggestion-48.png",
+      "size": 48,
+      "transparent": 1394,
+      "opaque": 789,
+      "bounds": [
+        9,
+        2,
+        46,
+        41
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "paper-lantern\\suggestion-96.png",
+      "size": 96,
+      "transparent": 5696,
+      "opaque": 3266,
+      "bounds": [
+        19,
+        5,
+        93,
+        82
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "paper-lantern\\suggestion-192.png",
+      "size": 192,
+      "transparent": 23012,
+      "opaque": 13360,
+      "bounds": [
+        38,
+        10,
+        187,
+        165
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "paper-lantern\\paused-48.png",
+      "size": 48,
+      "transparent": 1332,
+      "opaque": 872,
+      "bounds": [
+        9,
+        9,
+        45,
+        45
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "paper-lantern\\paused-96.png",
+      "size": 96,
+      "transparent": 5442,
+      "opaque": 3581,
+      "bounds": [
+        19,
+        19,
+        91,
+        91
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "paper-lantern\\paused-192.png",
+      "size": 192,
+      "transparent": 21922,
+      "opaque": 14553,
+      "bounds": [
+        38,
+        38,
+        183,
+        183
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "paper-lantern\\preview.png",
+      "size": 512,
+      "transparent": 177550,
+      "opaque": 83422,
+      "bounds": [
+        101,
+        101,
+        410,
+        442
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "night-letter\\idle-48.png",
+      "size": 48,
+      "transparent": 1563,
+      "opaque": 668,
+      "bounds": [
+        10,
+        7,
+        37,
+        39
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "night-letter\\idle-96.png",
+      "size": 96,
+      "transparent": 6329,
+      "opaque": 2745,
+      "bounds": [
+        20,
+        14,
+        75,
+        78
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "night-letter\\idle-192.png",
+      "size": 192,
+      "transparent": 25448,
+      "opaque": 11151,
+      "bounds": [
+        40,
+        28,
+        151,
+        157
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "night-letter\\listening-48.png",
+      "size": 48,
+      "transparent": 1408,
+      "opaque": 760,
+      "bounds": [
+        3,
+        7,
+        44,
+        39
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "night-letter\\listening-96.png",
+      "size": 96,
+      "transparent": 5768,
+      "opaque": 3170,
+      "bounds": [
+        6,
+        14,
+        89,
+        78
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "night-letter\\listening-192.png",
+      "size": 192,
+      "transparent": 23328,
+      "opaque": 13018,
+      "bounds": [
+        12,
+        28,
+        179,
+        157
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "night-letter\\processing-48.png",
+      "size": 48,
+      "transparent": 1410,
+      "opaque": 775,
+      "bounds": [
+        9,
+        2,
+        37,
+        39
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "night-letter\\processing-96.png",
+      "size": 96,
+      "transparent": 5757,
+      "opaque": 3212,
+      "bounds": [
+        18,
+        4,
+        75,
+        78
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "night-letter\\processing-192.png",
+      "size": 192,
+      "transparent": 23245,
+      "opaque": 13157,
+      "bounds": [
+        36,
+        8,
+        151,
+        157
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "night-letter\\approval-48.png",
+      "size": 48,
+      "transparent": 1372,
+      "opaque": 843,
+      "bounds": [
+        10,
+        7,
+        45,
+        45
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "night-letter\\approval-96.png",
+      "size": 96,
+      "transparent": 5587,
+      "opaque": 3472,
+      "bounds": [
+        20,
+        14,
+        91,
+        91
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "night-letter\\approval-192.png",
+      "size": 192,
+      "transparent": 22475,
+      "opaque": 14085,
+      "bounds": [
+        40,
+        28,
+        183,
+        183
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "night-letter\\suggestion-48.png",
+      "size": 48,
+      "transparent": 1441,
+      "opaque": 756,
+      "bounds": [
+        10,
+        2,
+        46,
+        39
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "night-letter\\suggestion-96.png",
+      "size": 96,
+      "transparent": 5873,
+      "opaque": 3136,
+      "bounds": [
+        20,
+        5,
+        93,
+        78
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "night-letter\\suggestion-192.png",
+      "size": 192,
+      "transparent": 23687,
+      "opaque": 12791,
+      "bounds": [
+        40,
+        10,
+        187,
+        157
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "night-letter\\paused-48.png",
+      "size": 48,
+      "transparent": 1372,
+      "opaque": 843,
+      "bounds": [
+        10,
+        7,
+        45,
+        45
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "night-letter\\paused-96.png",
+      "size": 96,
+      "transparent": 5587,
+      "opaque": 3472,
+      "bounds": [
+        20,
+        14,
+        91,
+        91
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "night-letter\\paused-192.png",
+      "size": 192,
+      "transparent": 22475,
+      "opaque": 14085,
+      "bounds": [
+        40,
+        28,
+        183,
+        183
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "night-letter\\preview.png",
+      "size": 512,
+      "transparent": 181185,
+      "opaque": 79889,
+      "bounds": [
+        106,
+        74,
+        405,
+        421
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "orbit-courier\\idle-48.png",
+      "size": 48,
+      "transparent": 1228,
+      "opaque": 920,
+      "bounds": [
+        3,
+        7,
+        37,
+        45
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "orbit-courier\\idle-96.png",
+      "size": 96,
+      "transparent": 5062,
+      "opaque": 3847,
+      "bounds": [
+        7,
+        14,
+        75,
+        90
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "orbit-courier\\idle-192.png",
+      "size": 192,
+      "transparent": 20488,
+      "opaque": 15758,
+      "bounds": [
+        14,
+        28,
+        151,
+        180
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "orbit-courier\\listening-48.png",
+      "size": 48,
+      "transparent": 1147,
+      "opaque": 971,
+      "bounds": [
+        3,
+        7,
+        44,
+        45
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "orbit-courier\\listening-96.png",
+      "size": 96,
+      "transparent": 4756,
+      "opaque": 4086,
+      "bounds": [
+        6,
+        14,
+        89,
+        90
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "orbit-courier\\listening-192.png",
+      "size": 192,
+      "transparent": 19333,
+      "opaque": 16785,
+      "bounds": [
+        12,
+        28,
+        179,
+        180
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "orbit-courier\\processing-48.png",
+      "size": 48,
+      "transparent": 1080,
+      "opaque": 1027,
+      "bounds": [
+        3,
+        2,
+        37,
+        45
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "orbit-courier\\processing-96.png",
+      "size": 96,
+      "transparent": 4507,
+      "opaque": 4307,
+      "bounds": [
+        7,
+        4,
+        75,
+        90
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "orbit-courier\\processing-192.png",
+      "size": 192,
+      "transparent": 18352,
+      "opaque": 17726,
+      "bounds": [
+        14,
+        8,
+        151,
+        180
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "orbit-courier\\approval-48.png",
+      "size": 48,
+      "transparent": 1067,
+      "opaque": 1077,
+      "bounds": [
+        3,
+        7,
+        45,
+        45
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "orbit-courier\\approval-96.png",
+      "size": 96,
+      "transparent": 4421,
+      "opaque": 4489,
+      "bounds": [
+        7,
+        14,
+        91,
+        91
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "orbit-courier\\approval-192.png",
+      "size": 192,
+      "transparent": 17915,
+      "opaque": 18330,
+      "bounds": [
+        14,
+        28,
+        183,
+        183
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "orbit-courier\\suggestion-48.png",
+      "size": 48,
+      "transparent": 1108,
+      "opaque": 1009,
+      "bounds": [
+        3,
+        2,
+        46,
+        45
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "orbit-courier\\suggestion-96.png",
+      "size": 96,
+      "transparent": 4615,
+      "opaque": 4231,
+      "bounds": [
+        7,
+        5,
+        93,
+        90
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "orbit-courier\\suggestion-192.png",
+      "size": 192,
+      "transparent": 18770,
+      "opaque": 17365,
+      "bounds": [
+        14,
+        10,
+        187,
+        180
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "orbit-courier\\paused-48.png",
+      "size": 48,
+      "transparent": 1067,
+      "opaque": 1077,
+      "bounds": [
+        3,
+        7,
+        45,
+        45
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "orbit-courier\\paused-96.png",
+      "size": 96,
+      "transparent": 4421,
+      "opaque": 4489,
+      "bounds": [
+        7,
+        14,
+        91,
+        91
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "orbit-courier\\paused-192.png",
+      "size": 192,
+      "transparent": 17915,
+      "opaque": 18330,
+      "bounds": [
+        14,
+        28,
+        183,
+        183
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "orbit-courier\\preview.png",
+      "size": 512,
+      "transparent": 146628,
+      "opaque": 113619,
+      "bounds": [
+        37,
+        74,
+        405,
+        482
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "prism-scribe\\idle-48.png",
+      "size": 48,
+      "transparent": 1466,
+      "opaque": 772,
+      "bounds": [
+        10,
+        6,
+        37,
+        40
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "prism-scribe\\idle-96.png",
+      "size": 96,
+      "transparent": 5919,
+      "opaque": 3176,
+      "bounds": [
+        20,
+        12,
+        75,
+        81
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "prism-scribe\\idle-192.png",
+      "size": 192,
+      "transparent": 23796,
+      "opaque": 12826,
+      "bounds": [
+        40,
+        24,
+        151,
+        163
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "prism-scribe\\listening-48.png",
+      "size": 48,
+      "transparent": 1311,
+      "opaque": 864,
+      "bounds": [
+        3,
+        6,
+        44,
+        40
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "prism-scribe\\listening-96.png",
+      "size": 96,
+      "transparent": 5358,
+      "opaque": 3601,
+      "bounds": [
+        6,
+        12,
+        89,
+        81
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "prism-scribe\\listening-192.png",
+      "size": 192,
+      "transparent": 21676,
+      "opaque": 14693,
+      "bounds": [
+        12,
+        24,
+        179,
+        163
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "prism-scribe\\processing-48.png",
+      "size": 48,
+      "transparent": 1323,
+      "opaque": 874,
+      "bounds": [
+        9,
+        2,
+        37,
+        40
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "prism-scribe\\processing-96.png",
+      "size": 96,
+      "transparent": 5385,
+      "opaque": 3613,
+      "bounds": [
+        18,
+        4,
+        75,
+        81
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "prism-scribe\\processing-192.png",
+      "size": 192,
+      "transparent": 21734,
+      "opaque": 14705,
+      "bounds": [
+        36,
+        8,
+        151,
+        163
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "prism-scribe\\approval-48.png",
+      "size": 48,
+      "transparent": 1275,
+      "opaque": 943,
+      "bounds": [
+        10,
+        6,
+        45,
+        45
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "prism-scribe\\approval-96.png",
+      "size": 96,
+      "transparent": 5187,
+      "opaque": 3882,
+      "bounds": [
+        20,
+        12,
+        91,
+        91
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "prism-scribe\\approval-192.png",
+      "size": 192,
+      "transparent": 20872,
+      "opaque": 15691,
+      "bounds": [
+        40,
+        24,
+        183,
+        183
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "prism-scribe\\suggestion-48.png",
+      "size": 48,
+      "transparent": 1358,
+      "opaque": 859,
+      "bounds": [
+        10,
+        2,
+        46,
+        40
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "prism-scribe\\suggestion-96.png",
+      "size": 96,
+      "transparent": 5505,
+      "opaque": 3544,
+      "bounds": [
+        20,
+        5,
+        93,
+        81
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "prism-scribe\\suggestion-192.png",
+      "size": 192,
+      "transparent": 22185,
+      "opaque": 14358,
+      "bounds": [
+        40,
+        10,
+        187,
+        163
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "prism-scribe\\paused-48.png",
+      "size": 48,
+      "transparent": 1275,
+      "opaque": 943,
+      "bounds": [
+        10,
+        6,
+        45,
+        45
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "prism-scribe\\paused-96.png",
+      "size": 96,
+      "transparent": 5187,
+      "opaque": 3882,
+      "bounds": [
+        20,
+        12,
+        91,
+        91
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "prism-scribe\\paused-192.png",
+      "size": 192,
+      "transparent": 20872,
+      "opaque": 15691,
+      "bounds": [
+        40,
+        24,
+        183,
+        183
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "prism-scribe\\preview.png",
+      "size": 512,
+      "transparent": 169305,
+      "opaque": 91628,
+      "bounds": [
+        106,
+        64,
+        405,
+        437
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "app-icon\\app-16.png",
+      "size": 16,
+      "transparent": 160,
+      "opaque": 60,
+      "bounds": [
+        3,
+        2,
+        12,
+        13
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "app-icon\\app-32.png",
+      "size": 32,
+      "transparent": 670,
+      "opaque": 285,
+      "bounds": [
+        6,
+        4,
+        25,
+        26
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "app-icon\\app-48.png",
+      "size": 48,
+      "transparent": 1563,
+      "opaque": 668,
+      "bounds": [
+        10,
+        7,
+        37,
+        39
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "file": "app-icon\\app-256.png",
+      "size": 256,
+      "transparent": 45193,
+      "opaque": 19799,
+      "bounds": [
+        53,
+        37,
+        202,
+        210
+      ],
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    }
+  ]
+}

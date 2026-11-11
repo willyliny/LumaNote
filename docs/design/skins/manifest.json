@@ -1,0 +1,39 @@
+{
+  "version": 2,
+  "defaultSkin": "night-letter",
+  "applicationIcon": "app-icon/app.svg",
+  "states": [
+    "idle",
+    "listening",
+    "processing",
+    "approval",
+    "suggestion",
+    "paused"
+  ],
+  "skins": [
+    {
+      "id": "leaf-cloak",
+      "metadata": "leaf-cloak/skin.json"
+    },
+    {
+      "id": "moon-pebble",
+      "metadata": "moon-pebble/skin.json"
+    },
+    {
+      "id": "paper-lantern",
+      "metadata": "paper-lantern/skin.json"
+    },
+    {
+      "id": "night-letter",
+      "metadata": "night-letter/skin.json"
+    },
+    {
+      "id": "orbit-courier",
+      "metadata": "orbit-courier/skin.json"
+    },
+    {
+      "id": "prism-scribe",
+      "metadata": "prism-scribe/skin.json"
+    }
+  ]
+}

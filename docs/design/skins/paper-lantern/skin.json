@@ -1,0 +1,14 @@
+{
+  "id": "paper-lantern",
+  "name": "紙燈",
+  "family": "quiet-desk",
+  "preferredTheme": "light",
+  "accent": {
+    "light": "#805116",
+    "dark": "#F3CB8B"
+  },
+  "onAccent": {
+    "light": "#FFFFFF",
+    "dark": "#30200D"
+  }
+}

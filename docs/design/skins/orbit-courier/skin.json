@@ -1,0 +1,15 @@
+{
+  "id": "orbit-courier",
+  "name": "星軌信使",
+  "family": "night-voyage",
+  "preferredTheme": "dark",
+  "accent": {
+    "light": "#80500C",
+    "dark": "#FFD18A"
+  },
+  "onAccent": {
+    "light": "#FFFFFF",
+    "dark": "#30200D"
+  },
+  "glow": "#FFD18A"
+}

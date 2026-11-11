@@ -1,0 +1,71 @@
+{
+  "version": "2.0",
+  "themes": {
+    "light": {
+      "canvas": "#F2F6FA",
+      "surface": "#FFFFFF",
+      "subtle": "#E3EDF4",
+      "text": "#17283B",
+      "muted": "#475B70",
+      "primary": "#006277",
+      "onPrimary": "#FFFFFF",
+      "secondary": "#574985",
+      "success": "#176246",
+      "warning": "#80500C",
+      "error": "#A32D42",
+      "border": "#B4C5D5",
+      "focus": "#006277"
+    },
+    "dark": {
+      "canvas": "#0B1220",
+      "surface": "#131F30",
+      "subtle": "#1C2D43",
+      "text": "#F0F6FF",
+      "muted": "#B4C6DD",
+      "primary": "#80E5F2",
+      "onPrimary": "#09252D",
+      "secondary": "#CAB9FF",
+      "success": "#91EBC2",
+      "warning": "#FFD18A",
+      "error": "#FFACBA",
+      "border": "#536D89",
+      "focus": "#80E5F2"
+    }
+  },
+  "spacing": {
+    "xs": 4,
+    "sm": 8,
+    "md": 12,
+    "lg": 16,
+    "xl": 24,
+    "xxl": 32
+  },
+  "radius": {
+    "control": 10,
+    "card": 16,
+    "panel": 24,
+    "pill": 999
+  },
+  "size": {
+    "panelWidth": 440,
+    "panelMinWidth": 380,
+    "panelMaxWidth": 480,
+    "target": 44,
+    "floating": 64,
+    "collapsedWidth": 12,
+    "collapsedHeight": 48
+  },
+  "type": {
+    "family": "\"Noto Sans TC\", \"Noto Sans CJK TC\", \"Microsoft JhengHei UI\", sans-serif",
+    "body": 14,
+    "bodyLineHeight": 1.65,
+    "caption": 12,
+    "heading": 22
+  },
+  "motion": {
+    "feedbackMs": 140,
+    "panelMs": 180,
+    "processingMs": 1800,
+    "reducedMotion": "disable-loop-and-transform"
+  }
+}
