@@ -1,7 +1,17 @@
 //! Tauri shell of the Elf desktop assistant.
 //!
-//! This slice only proves the toolchain: three windows, a system tray, single instance and
-//! two commands. There is deliberately no business logic here (handbook 3.1).
+//! Three windows, a system tray, single instance and a few window-management commands.
+//! There is deliberately no business logic here (handbook 3.1).
+//!
+//! Window lifecycle (the only way the process ends is the tray item "結束"):
+//!  - `floating`: always there; the user cannot close it (close requests are swallowed).
+//!  - `main`: closing it only hides it; tray / sprite / second launch show it again.
+//!  - `settings`: created on demand; closing it destroys just that window.
+//!  - If the last window were ever destroyed anyway, `RunEvent::ExitRequested { code: None }`
+//!    is prevented in `run()`; only `app.exit(..)` (code `Some`) ends the process.
+
+mod floating;
+mod geometry;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -13,9 +23,12 @@ use tauri::{
     AppHandle, Manager, RunEvent, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent,
 };
 
-const LABEL_FLOATING: &str = "floating";
+pub(crate) const LABEL_FLOATING: &str = "floating";
 const LABEL_MAIN: &str = "main";
 const LABEL_SETTINGS: &str = "settings";
+
+/// Fallback so a floating window that never finishes loading still appears.
+const FLOATING_SHOW_FALLBACK: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// Tray toggles. They only remember the state for now; nothing reads them yet.
 #[derive(Default)]
@@ -26,14 +39,14 @@ struct ShellState {
 
 /// Error shape that matches `IpcErrorPayload` in `src/lib/ipc-types.ts`.
 #[derive(Debug, Serialize)]
-struct CommandError {
+pub(crate) struct CommandError {
     kind: &'static str,
     message: String,
     retryable: bool,
 }
 
 impl CommandError {
-    fn new(kind: &'static str, message: impl Into<String>) -> Self {
+    pub(crate) fn new(kind: &'static str, message: impl Into<String>) -> Self {
         Self {
             kind,
             message: message.into(),
@@ -136,7 +149,7 @@ fn build_tray(app: &tauri::App) -> tauri::Result<()> {
         .build()?;
 
     let mut tray = TrayIconBuilder::with_id("elf-tray")
-        .tooltip("精靈助手")
+        .tooltip("精靈助手（左鍵開啟，右鍵選單）")
         .menu(&menu)
         // Left click opens the main panel; right click shows the menu.
         .show_menu_on_left_click(false)
@@ -178,6 +191,15 @@ fn build_tray(app: &tauri::App) -> tauri::Result<()> {
     Ok(())
 }
 
+/// Reveals the floating window without activating it. Safe to call repeatedly.
+fn reveal_floating(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window(LABEL_FLOATING) {
+        if !window.is_visible().unwrap_or(false) {
+            let _ = window.show();
+        }
+    }
+}
+
 /// Entry point called from `main.rs`.
 pub fn run() {
     let app = tauri::Builder::default()
@@ -187,36 +209,63 @@ pub fn run() {
             show_main(app);
         }))
         .manage(ShellState::default())
-        .invoke_handler(tauri::generate_handler![app_info, open_window])
-        // The floating window is created hidden and revealed once its page has loaded,
-        // which avoids a white flash on a transparent window.
+        .manage(floating::FloatingState::default())
+        .invoke_handler(tauri::generate_handler![
+            app_info,
+            open_window,
+            floating::set_floating_expanded
+        ])
+        // The floating window is created hidden (`visible: false`) and revealed once its page
+        // has loaded, which avoids a flash on a transparent window.
         .on_page_load(|webview, payload| {
             if webview.label() == LABEL_FLOATING
                 && matches!(payload.event(), PageLoadEvent::Finished)
             {
-                let _ = webview.window().show();
+                reveal_floating(webview.app_handle());
             }
         })
-        // Closing the main panel only hides it; the app keeps running in the tray.
-        .on_window_event(|window, event| {
-            if let WindowEvent::CloseRequested { api, .. } = event {
-                if window.label() == LABEL_MAIN {
+        .on_window_event(|window, event| match event {
+            WindowEvent::CloseRequested { api, .. } => match window.label() {
+                // Closing the main panel only hides it; the app keeps running in the tray.
+                LABEL_MAIN => {
                     api.prevent_close();
                     let _ = window.hide();
                 }
+                // The sprite is not user-closable (no decorations, not focusable, but a
+                // programmatic or shell-level close must not remove the app's last handle).
+                LABEL_FLOATING => api.prevent_close(),
+                // `settings` (and anything else): default behaviour, the window is destroyed
+                // and nothing else is affected.
+                _ => {}
+            },
+            WindowEvent::Moved(_) if window.label() == LABEL_FLOATING => {
+                floating::note_moved(window.app_handle());
             }
+            _ => {}
         })
         .setup(|app| {
             build_tray(app)?;
+            floating::init(app.handle());
+            // If the page never reports "finished" (dev server down, load error), still show
+            // the sprite so the user is not left with an invisible app.
+            let handle = app.handle().clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(FLOATING_SHOW_FALLBACK);
+                reveal_floating(&handle);
+            });
             Ok(())
         })
         .build(tauri::generate_context!())
         .expect("error while building the Tauri application");
 
     app.run(|_app, event| {
-        // `code: None` means the last window went away; keep running in the tray.
-        // The tray "結束" item calls `app.exit(0)` (code = Some(0)) and is not blocked.
-        if let RunEvent::ExitRequested { code: None, api, .. } = event {
+        // `code: None` means the last window went away (not a request from us); keep running
+        // in the tray. The tray "結束" item calls `app.exit(0)` (code = Some(0)) and is not
+        // blocked.
+        if let RunEvent::ExitRequested {
+            code: None, api, ..
+        } = event
+        {
             api.prevent_exit();
         }
     });

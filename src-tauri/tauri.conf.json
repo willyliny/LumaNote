@@ -26,8 +26,7 @@
         "skipTaskbar": true,
         "focus": false,
         "focusable": false,
-        "visible": false,
-        "noRedirectionBitmap": true
+        "visible": false
       },
       {
         "label": "main",

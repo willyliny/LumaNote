@@ -82,6 +82,48 @@ export async function getAppInfo(): Promise<AppInfo> {
   return (await tauriInvoke('app_info', {})) as AppInfo;
 }
 
+/**
+ * Result of the Rust `set_floating_expanded` command (src-tauri/src/floating.rs). Defined here,
+ * not in ipc-types.ts, so this file does not depend on the frontend's CommandMap.
+ * `sprite_offset_*` is the logical offset of the sprite centre from the window centre.
+ */
+export interface FloatingExpandedResult {
+  width: number;
+  height: number;
+  sprite_offset_x: number;
+  sprite_offset_y: number;
+}
+
+/** Real `set_floating_expanded`. Only the floating window is allowed to call it. */
+export function setFloatingExpanded(expanded: boolean): Promise<FloatingExpandedResult> {
+  return tauriInvoke('set_floating_expanded', { expanded }) as Promise<FloatingExpandedResult>;
+}
+
+/**
+ * Commands that exist in Rust and must never be answered by the mock inside a Tauri window.
+ * Add a name here when the Rust side gains the command.
+ */
+const NATIVE_COMMANDS: readonly string[] = ['set_floating_expanded'];
+
+/**
+ * Hybrid dispatch for "mock by default": returns `base` unchanged outside Tauri; inside Tauri,
+ * routes NATIVE_COMMANDS to the real backend and everything else to `base`.
+ * `selectIpc()` in ipc.ts wraps the mock with this: `return withNativeCommands(createMockIpc())`.
+ */
+export function withNativeCommands(base: IpcClient): IpcClient {
+  if (typeof window === 'undefined' || !isTauri()) return base;
+  return {
+    kind: base.kind,
+    invoke<K extends CommandName>(cmd: K, args: CommandArgs<K>): Promise<CommandResult<K>> {
+      if (NATIVE_COMMANDS.includes(cmd)) {
+        return tauriInvoke(cmd, args as Record<string, unknown>) as Promise<CommandResult<K>>;
+      }
+      return base.invoke(cmd, args);
+    },
+    listen: (event, handler) => base.listen(event, handler),
+  };
+}
+
 export function createTauriIpc(): IpcClient {
   return {
     kind: 'tauri',

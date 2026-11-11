@@ -1,10 +1,11 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "floating",
-  "description": "Floating sprite: may only drag itself and ask the shell to open the main panel.",
+  "description": "Floating sprite: may drag itself, ask the shell to open the main panel, and expand/collapse itself for the radial menu.",
   "windows": ["floating"],
   "permissions": [
     "core:window:allow-start-dragging",
-    "allow-open-window"
+    "allow-open-window",
+    "allow-set-floating-expanded"
   ]
 }
