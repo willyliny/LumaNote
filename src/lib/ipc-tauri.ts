@@ -155,10 +155,10 @@ export function createTauriIpc(): IpcClient {
 /* Native window shim (mock backend inside a Tauri window)             */
 /* ------------------------------------------------------------------ */
 
-/** The mock calls `window.open(url, 'elf-panel' | 'elf-settings', ...)` (ipc-mock.ts open_window). */
+/** The mock calls `window.open(url, 'luma-panel' | 'luma-settings', ...)` (ipc-mock.ts open_window). */
 const MOCK_WINDOW_TARGETS: Record<string, NativeLabel> = {
-  'elf-panel': 'main',
-  'elf-settings': 'settings',
+  'luma-panel': 'main',
+  'luma-settings': 'settings',
 };
 
 function installNativeWindowShim(): void {
@@ -183,9 +183,9 @@ if (typeof window !== 'undefined' && isTauri()) {
         __TAURI_INTERNALS__?: { metadata?: { currentWindow?: { label?: string } } };
       }).__TAURI_INTERNALS__?.metadata?.currentWindow?.label;
       if (label === 'floating') return;
-      console.info('[elf] app_info', await getAppInfo());
+      console.info('[lumanote] app_info', await getAppInfo());
     } catch (e) {
-      console.error('[elf] app_info failed', e);
+      console.error('[lumanote] app_info failed', e);
     }
   })();
 }

@@ -4,7 +4,7 @@
  *   node scripts/check-floating-constants.mjs     (npm run check:floating, part of npm run build)
  * Sources: src/features/floating/layout.ts (owner), src-tauri/src/geometry.rs, src-tauri/tauri.conf.json,
  * src/styles/tokens.css (--size-sprite) and floating.css fallbacks. The same equalities are asserted by
- * `cargo test -p elf-shell` (geometry::tests::constants_match_frontend).
+ * `cargo test -p lumanote-shell` (geometry::tests::constants_match_frontend).
  */
 import fs from 'node:fs';
 import path from 'node:path';

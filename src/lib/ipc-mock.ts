@@ -519,7 +519,7 @@ interface MockDebug {
 }
 
 /** The mock "backend" keeps appearance in localStorage so it survives reloads and is shared by windows. */
-const APPEARANCE_KEY = 'elf-mock-appearance';
+const APPEARANCE_KEY = 'luma-mock-appearance';
 function readStoredAppearance(): Appearance {
   try {
     const raw = localStorage.getItem(APPEARANCE_KEY);
@@ -542,7 +542,7 @@ export function createMockIpc(): IpcClient {
   let dropCount = 0;
 
   /* Cross-window sync: all mock windows in one browser profile behave as one backend. */
-  const channel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('elf-mock') : null;
+  const channel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('luma-mock') : null;
   let owner = false; // true once this window handled a command; only owners run timers
   const broadcastState = () => channel?.postMessage({ t: 'state', state });
   const deliverLocal = <K extends EventName>(name: K, payload: EventMap[K]) => {
@@ -1301,7 +1301,7 @@ export function createMockIpc(): IpcClient {
     speed: SPEED,
     expandedLog: [],
   };
-  (window as unknown as { __elfMock: MockDebug }).__elfMock = debug;
+  (window as unknown as { __lumaMock: MockDebug }).__lumaMock = debug;
 
   return {
     kind: 'mock',

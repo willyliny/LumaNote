@@ -4,7 +4,7 @@ import { boot } from './boot';
 import { FloatingApp } from '../features/floating/FloatingApp';
 
 boot();
-document.title = '精靈助手 浮動入口';
+document.title = 'LumaNote 浮動入口';
 // dev/screenshot only: paint a stand-in wallpaper ('1' follows the theme, or 'light' | 'dark')
 const backdrop = new URLSearchParams(location.search).get('backdrop');
 if (backdrop === '1' || backdrop === 'light' || backdrop === 'dark') {

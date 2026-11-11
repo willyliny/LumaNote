@@ -1,5 +1,5 @@
 export type ThemePref = 'system' | 'light' | 'dark';
-const KEY = 'elf-theme';
+const KEY = 'luma-theme';
 
 function readPref(): ThemePref {
   try {

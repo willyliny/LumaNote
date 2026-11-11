@@ -1,6 +1,6 @@
 //! Pure window geometry for the floating sprite.
 //!
-//! Nothing here touches Tauri, so it is unit-tested on Linux (`cargo test -p elf-shell`).
+//! Nothing here touches Tauri, so it is unit-tested on Linux (`cargo test -p lumanote-shell`).
 //!
 //! Conventions:
 //!  - "physical" = virtual-desktop pixels as reported by Tauri (`PhysicalPosition`, work areas).

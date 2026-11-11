@@ -1,4 +1,4 @@
-//! Tauri shell of the Elf desktop assistant.
+//! Tauri shell of the LumaNote desktop assistant.
 //!
 //! Three windows, a system tray, single instance and a few window-management commands.
 //! There is deliberately no business logic here (handbook 3.1).
@@ -66,7 +66,7 @@ struct AppInfo {
 #[tauri::command]
 fn app_info() -> AppInfo {
     AppInfo {
-        app_name: "精靈助手",
+        app_name: "LumaNote",
         app_version: env!("CARGO_PKG_VERSION"),
         tauri_version: tauri::VERSION,
     }
@@ -122,7 +122,7 @@ fn open_settings(app: &AppHandle) -> tauri::Result<()> {
         return Ok(());
     }
     WebviewWindowBuilder::new(app, LABEL_SETTINGS, WebviewUrl::App("settings.html".into()))
-        .title("精靈助手 設定")
+        .title("LumaNote 設定")
         .inner_size(760.0, 760.0)
         .min_inner_size(520.0, 480.0)
         .center()
@@ -148,8 +148,8 @@ fn build_tray(app: &tauri::App) -> tauri::Result<()> {
         .item(&quit)
         .build()?;
 
-    let mut tray = TrayIconBuilder::with_id("elf-tray")
-        .tooltip("精靈助手（左鍵開啟，右鍵選單）")
+    let mut tray = TrayIconBuilder::with_id("luma-tray")
+        .tooltip("LumaNote（左鍵開啟，右鍵選單）")
         .menu(&menu)
         // Left click opens the main panel; right click shows the menu.
         .show_menu_on_left_click(false)

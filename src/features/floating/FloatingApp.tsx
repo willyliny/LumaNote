@@ -12,7 +12,7 @@ import { dndPolicy, type WheelData, type WheelItem } from './wheel-items';
 import './floating.css';
 
 type Dock = 'none' | 'left' | 'right';
-const DOCK_KEY = 'elf-dock';
+const DOCK_KEY = 'luma-dock';
 
 /** pointer must REST on the sprite this long before the wheel opens; passing over does nothing */
 const OPEN_DELAY_MS = 250;

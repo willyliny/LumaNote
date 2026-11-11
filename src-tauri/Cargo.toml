@@ -1,13 +1,13 @@
 [package]
-name = "elf-shell"
+name = "lumanote-shell"
 version = "0.1.0"
-description = "Tauri shell of the Elf desktop assistant (windows, tray, IPC glue only)"
+description = "Tauri shell of the LumaNote desktop assistant (windows, tray, IPC glue only)"
 edition = "2021"
 rust-version = "1.90"
 publish = false
 
 [lib]
-name = "elf_shell_lib"
+name = "lumanote_shell_lib"
 
 [build-dependencies]
 tauri-build = { version = "=2.7.4", features = [] }
@@ -19,4 +19,4 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # Business logic crate. Not called yet in this slice (it exports no version constant);
 # linked so the first build also proves the bundled SQLite C build works on this machine.
-elf-core = { path = "../crates/elf-core" }
+lumanote-core = { path = "../crates/lumanote-core" }

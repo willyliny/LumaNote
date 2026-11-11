@@ -15,7 +15,7 @@ import { validateLayeredDir } from './layered-validate.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SRC_SKIN = path.join(ROOT, 'docs/design/skins/night-letter');
-const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'elf-layered-test-'));
+const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'luma-layered-test-'));
 process.on('exit', () => fs.rmSync(tmpRoot, { recursive: true, force: true }));
 
 function crcChunk(type, data) {

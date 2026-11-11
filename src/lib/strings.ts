@@ -14,7 +14,7 @@ import type {
 import type { SpriteState } from '../components/spriteState';
 
 export const t = {
-  appName: '精靈助手',
+  appName: 'LumaNote',
   tabs: { chat: '對話', tasks: '任務', today: '今日' },
   common: {
     cancel: '取消',
@@ -452,7 +452,7 @@ export const t = {
   },
 
   dev: {
-    launcherTitle: '精靈助手 開發入口',
+    launcherTitle: 'LumaNote 開發入口',
     launcherBody: '每個畫面都是獨立的 Vite 入口，之後各自成為一個 Tauri 視窗。目前使用模擬後端。',
     floating: '浮動入口',
     panel: '主面板',

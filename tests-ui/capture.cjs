@@ -183,16 +183,16 @@ async function checkResync(browser) {
   watch(page, 'resync');
   await page.goto(`${BASE}/panel.html?theme=light&mockSpeed=6`);
   await page.waitForSelector('text=有什麼可以交給我');
-  await page.evaluate(() => window.__elfMock.dropNextEvents(40)); // swallow a burst, incl. terminal events
+  await page.evaluate(() => window.__lumaMock.dropNextEvents(40)); // swallow a burst, incl. terminal events
   await page.getByRole('button', { name: '用範例會議筆記試試' }).click();
   await page.getByRole('button', { name: '送出' }).click();
   await page.waitForSelector('text=需要你核准', { timeout: 30000 });
   const ok1 = await page.locator('.approval').count();
   await page.getByRole('button', { name: '核准一次' }).click();
-  await page.evaluate(() => window.__elfMock.dropNextEvents(1000)); // drop everything, incl. `completed`
+  await page.evaluate(() => window.__lumaMock.dropNextEvents(1000)); // drop everything, incl. `completed`
   await page.waitForTimeout(6000);
   const stillBefore = await page.locator('.strip .badge:has-text("已完成")').count();
-  await page.evaluate(() => window.__elfMock.dropNextEvents(0));
+  await page.evaluate(() => window.__lumaMock.dropNextEvents(0));
   // reconnect trigger: window becomes visible again
   await page.evaluate(() => {
     window.dispatchEvent(new Event('online'));
@@ -244,7 +244,7 @@ function bodyIdentity() {
 }
 
 async function contactSheet(browser, files, cols, label, bg, cell) {
-  const html = path.join(os.tmpdir(), `elf-sheet-${label}.html`);
+  const html = path.join(os.tmpdir(), `luma-sheet-${label}.html`);
   const rows = files
     .map((f) => `<div class="c"><img src="file://${f.src}" width="${cell}" height="${cell}"><span>${f.caption}</span></div>`)
     .join('');
@@ -305,7 +305,7 @@ async function runSkins(browser) {
   }
 
   // avatar legibility at 24 / 32 / 40 px on panel surfaces (quiet-desk and night-voyage, light and dark)
-  const html = path.join(os.tmpdir(), 'elf-avatars.html');
+  const html = path.join(os.tmpdir(), 'luma-avatars.html');
   const surfaces = [
     ['quiet light', '#ffffff', '#202b25'],
     ['quiet dark', '#202a23', '#f1f4ed'],
@@ -375,7 +375,7 @@ async function runWheel(browser) {
     await pg.waitForSelector('[data-testid="float-expanded"]');
     await pg.waitForFunction(() => document.documentElement.getAttribute('data-skin'));
     await pg.waitForTimeout(500); // store sync
-    const log = () => pg.evaluate(() => window.__elfMock.expandedLog);
+    const log = () => pg.evaluate(() => window.__lumaMock.expandedLog);
 
     // passing over the sprite (< 250 ms) must not open
     await pg.mouse.move(10, 10);
@@ -607,7 +607,7 @@ async function runAppearanceFlow(browser) {
   await sp.waitForTimeout(300);
   check('preview does not change floating window', (await skinOf(float)).startsWith('leaf-cloak'));
   check('preview does not change the settings window itself', (await skinOf(sp)).startsWith('leaf-cloak'));
-  const stored = await sp.evaluate(() => localStorage.getItem('elf-mock-appearance'));
+  const stored = await sp.evaluate(() => localStorage.getItem('luma-mock-appearance'));
   check('preview did not persist', stored === null, String(stored));
   await shot(sp, 'settings-skins-preview-night-letter-light');
 
@@ -619,7 +619,7 @@ async function runAppearanceFlow(browser) {
   check('apply updates floating entry live', (await skinOf(float)) === 'night-letter/night-voyage');
   check('apply updates panel avatar live (img src is the night-letter avatar)', await panel.evaluate(() => /avatar/.test(document.querySelector('.shell__sprite img')?.getAttribute('src') ?? '') && document.querySelector('.shell__sprite img').dataset.skin === 'night-letter'));
   check('theme untouched by applying a skin (stays light)', await panel.evaluate(() => document.documentElement.getAttribute('data-theme')) === 'light');
-  const afterStored = JSON.parse(await sp.evaluate(() => localStorage.getItem('elf-mock-appearance')));
+  const afterStored = JSON.parse(await sp.evaluate(() => localStorage.getItem('luma-mock-appearance')));
   check('persisted skin_id', afterStored.skin_id === 'night-letter' && afterStored.theme === 'system', JSON.stringify(afterStored));
   await sp.waitForTimeout(400);
   await shot(sp, 'settings-skins-applied-night-letter-light');
@@ -640,7 +640,7 @@ async function runAppearanceFlow(browser) {
 
   // fallback: unknown stored id
   const c2 = await browser.newContext({ deviceScaleFactor: 2, locale: 'zh-TW', reducedMotion: 'reduce', viewport: { width: 760, height: 1100 } });
-  await c2.addInitScript(() => { if (!sessionStorage.getItem('seeded')) { localStorage.setItem('elf-mock-appearance', JSON.stringify({ skin_id: 'ghost-skin', theme: 'system' })); sessionStorage.setItem('seeded', '1'); } });
+  await c2.addInitScript(() => { if (!sessionStorage.getItem('seeded')) { localStorage.setItem('luma-mock-appearance', JSON.stringify({ skin_id: 'ghost-skin', theme: 'system' })); sessionStorage.setItem('seeded', '1'); } });
   const s2 = await c2.newPage();
   watch(s2, 'fallback');
   await s2.goto(`${BASE}/settings.html?theme=light&tab=appearance`);
@@ -648,7 +648,7 @@ async function runAppearanceFlow(browser) {
   check('unknown stored skin id: default shown + visible inline notice', (await skinOf(s2)).startsWith('leaf-cloak'));
   await s2.waitForTimeout(300);
   await shot(s2, 'settings-skins-fallback-light');
-  const still = await s2.evaluate(() => JSON.parse(localStorage.getItem('elf-mock-appearance')).skin_id);
+  const still = await s2.evaluate(() => JSON.parse(localStorage.getItem('luma-mock-appearance')).skin_id);
   check('fallback does not overwrite the stored value', still === 'ghost-skin');
   await c2.close();
 }
@@ -1068,7 +1068,7 @@ async function runLayered(browser) {
     await w.waitForSelector('.lsprite');
     await layersReady(w);
     await w.waitForTimeout(400);
-    const log = () => w.evaluate(() => window.__elfMock.expandedLog);
+    const log = () => w.evaluate(() => window.__lumaMock.expandedLog);
     await w.mouse.move(2, 2);
     await w.mouse.move(EC, EC);
     await w.waitForTimeout(100);

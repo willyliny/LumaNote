@@ -320,7 +320,7 @@ export function startApp() {
 
   // Cross-window "listening" flag (chat input focused in the panel, shown on the floating sprite).
   if (typeof BroadcastChannel !== 'undefined') {
-    const ch = new BroadcastChannel('elf-ui');
+    const ch = new BroadcastChannel('luma-ui');
     ch.onmessage = (e: MessageEvent) => {
       if (typeof e.data?.listening === 'boolean') appStore.set({ listening: e.data.listening });
     };

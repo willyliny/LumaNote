@@ -4,7 +4,7 @@
  *   src-tauri/src/geometry.rs      COLLAPSED_LOGICAL / EXPANDED_LOGICAL
  *   src-tauri/tauri.conf.json      windows[floating].width / height (= collapsed)
  *
- * They cannot drift silently: `cargo test -p elf-shell` (geometry::tests::constants_match_frontend) and
+ * They cannot drift silently: `cargo test -p lumanote-shell` (geometry::tests::constants_match_frontend) and
  * `npm run check:floating` (part of `npm run build`) both compare the numbers below with those files and
  * check the wheel geometry. Keep each constant on ONE line, `export const NAME = <number>;`.
  *

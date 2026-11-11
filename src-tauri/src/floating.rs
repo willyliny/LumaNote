@@ -309,7 +309,7 @@ pub fn init(app: &AppHandle) {
     if let Some(rx) = rx {
         let app = app.clone();
         std::thread::Builder::new()
-            .name("elf-floating-save".into())
+            .name("luma-floating-save".into())
             .spawn(move || save_loop(app, rx))
             .ok();
     }
@@ -319,7 +319,7 @@ fn restore_position(app: &AppHandle, win: &WebviewWindow) {
     let monitors = match win.available_monitors() {
         Ok(m) => m,
         Err(e) => {
-            eprintln!("[elf] available_monitors failed: {e}");
+            eprintln!("[lumanote] available_monitors failed: {e}");
             return;
         }
     };
@@ -342,14 +342,14 @@ fn restore_position(app: &AppHandle, win: &WebviewWindow) {
             .contains_point(f64::from(x) + 1.0, f64::from(y) + 1.0)
     });
     if let Err(e) = win.set_position(Position::Physical(PhysicalPosition::new(x, y))) {
-        eprintln!("[elf] restore set_position failed: {e}");
+        eprintln!("[lumanote] restore set_position failed: {e}");
     }
     if let Some(g) = target {
         let side = (COLLAPSED_LOGICAL * g.scale).round() as u32;
         let _ = win.set_size(Size::Physical(PhysicalSize::new(side, side)));
     }
     if how == Placement::Default {
-        eprintln!("[elf] floating window: using default position ({x}, {y})");
+        eprintln!("[lumanote] floating window: using default position ({x}, {y})");
     }
 }
 
@@ -409,7 +409,7 @@ fn save_now(app: &AppHandle) {
     };
     match write_atomic(&path, &json) {
         Ok(()) => *lock(&state.last_saved) = Some(record),
-        Err(e) => eprintln!("[elf] saving floating position failed: {e}"),
+        Err(e) => eprintln!("[lumanote] saving floating position failed: {e}"),
     }
 }
 
@@ -419,7 +419,7 @@ mod tests {
 
     #[test]
     fn atomic_write_replaces_and_leaves_no_tmp() {
-        let dir = std::env::temp_dir().join(format!("elf-shell-test-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("lumanote-shell-test-{}", std::process::id()));
         let path = dir.join("nested").join(POSITION_FILE);
         write_atomic(&path, b"{\"a\":1}").unwrap();
         write_atomic(&path, b"{\"a\":2}").unwrap();
@@ -430,7 +430,7 @@ mod tests {
 
     #[test]
     fn read_saved_tolerates_garbage_and_missing() {
-        let dir = std::env::temp_dir().join(format!("elf-shell-test2-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("lumanote-shell-test2-{}", std::process::id()));
         fs::create_dir_all(&dir).unwrap();
         let p = dir.join("x.json");
         assert!(read_saved(&p).is_none());

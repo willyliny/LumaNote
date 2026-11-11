@@ -17,13 +17,13 @@
 | --- | --- | --- | --- | --- |
 | 1 | Tauri 版本 | `tauri = "2.12.5"`、`tauri-build = "2.7.4"`、CLI `@tauri-apps/cli 2.12.4`、`@tauri-apps/api 2.12.4`；Rust **≥ 1.90**（MSVC toolchain） | 高 | Tauri **3.0.0-alpha.6** 已發布，`dev` 分支已是 v3。本週一律鎖 2.x，不要執行 `cargo update` 跨到 3.x 預發版 |
 | 2 | 系統匣 | 用 Tauri **核心功能**，不是外掛：`tauri` 的 `tray-icon` feature，並在 Rust 端用 `TrayIconBuilder` 建立 | 高 | 低 |
-| 2 | 通知 | `tauri-plugin-notification 2.8.1`。只用來「顯示」通知，排程一律放在 Rust（elf-core scheduler） | 中 | dev 模式通知顯示為 PowerShell；只有用 NSIS/MSI **安裝後**才會帶正確的 AUMID。桌面版會忽略排程參數。按鈕點擊只有在 toast 還在畫面上時才會回報 |
+| 2 | 通知 | `tauri-plugin-notification 2.8.1`。只用來「顯示」通知，排程一律放在 Rust（lumanote-core scheduler） | 中 | dev 模式通知顯示為 PowerShell；只有用 NSIS/MSI **安裝後**才會帶正確的 AUMID。桌面版會忽略排程參數。按鈕點擊只有在 toast 還在畫面上時才會回報 |
 | 2 | 其他外掛 | single-instance 2.5.5、autostart 2.7.0、global-shortcut 2.4.1、window-state 2.5.0、opener 2.7.3；updater 2.14.1 本週不啟用；**不要用 shell 的 open（已 deprecated）** | 高 | single-instance 必須第一個註冊 |
 | 3 | 浮動視窗 | `focusable(false)` + `focused(false)` + `always_on_top(true)` + `transparent(true)` + `decorations(false)` + `shadow(false)` + `skip_taskbar(true)` + `no_redirection_bitmap(true)`，建立時先隱藏，載入完成再顯示 | 中低 | 拖曳時焦點閃動（#10767）；`skipTaskbar` 偶發失效（#10422）；透明視窗白閃；不同 DPI 的多螢幕定位（#6843，仍 open） |
 | 3 | 視窗權限 | 每個視窗一個 capability 檔（`floating` / `main` / `settings`），不要用 `core:default`；App 命令用 `AppManifest::commands` 納入 ACL | 高 | 一個視窗符合多個 capability 時，權限會合併 |
-| 4 | 憑證 | `keyring-core 1.0.1` + `windows-native-keyring-store 1.1.0`（或 `keyring 4.2.0` 預設 `v1`），只放在 `src-tauri`、`cfg(windows)` 底下。elf-core 只定義 `CredentialStore` trait | 高 | Credential Manager 單筆上限 **2560 bytes**，較長的 OAuth token 可能放不下；**stronghold 不建議**（上游 2024-05 後就沒有發版） |
+| 4 | 憑證 | `keyring-core 1.0.1` + `windows-native-keyring-store 1.1.0`（或 `keyring 4.2.0` 預設 `v1`），只放在 `src-tauri`、`cfg(windows)` 底下。lumanote-core 只定義 `CredentialStore` trait | 高 | Credential Manager 單筆上限 **2560 bytes**，較長的 OAuth token 可能放不下；**stronghold 不建議**（上游 2024-05 後就沒有發版） |
 | 5 | SQLite | `rusqlite = { version = "=0.41.1", features = ["bundled"] }` + `rusqlite_migration = "2.7.0"`，啟用 WAL | 高 | **rusqlite 0.42.0 是今天才發布的，rusqlite_migration 2.7.0 只支援 `^0.41`**，絕對不能升到 0.42 |
-| 6 | TS 型別產生 | `tauri-specta = "=2.0.0-rc.28"` + `specta = "=2.0.0-rc.28"` + `specta-typescript = "=0.0.15"`。elf-core 的型別只 derive `specta::Type`，specta 不依賴 Tauri | 中 | 仍是 RC，rc.25 到 rc.28 在幾週內就連續發版，必須用 `=` 鎖版；i64/u64 預設禁止匯出 |
+| 6 | TS 型別產生 | `tauri-specta = "=2.0.0-rc.28"` + `specta = "=2.0.0-rc.28"` + `specta-typescript = "=0.0.15"`。lumanote-core 的型別只 derive `specta::Type`，specta 不依賴 Tauri | 中 | 仍是 RC，rc.25 到 rc.28 在幾週內就連續發版，必須用 `=` 鎖版；i64/u64 預設禁止匯出 |
 | 7 | 活動採樣 | `windows = "0.62.2"`（與 Tauri 2.12.5 依賴的 0.62 同一版號系列），feature 清單見 §7 | 高 | 前景視窗可能是 NULL；UWP 會顯示為 ApplicationFrameHost；Modern Standby 期間桌面程式會被暫停 |
 | 8 | 背景常駐 | `CloseRequested` 時改為 `prevent_close` + `hide`，`RunEvent::ExitRequested { code: None }` 時 `prevent_exit`；系統匣的「結束」呼叫 `app.exit(0)` | 高 | 隱藏視窗的 WebView2 **不會自動暫停或降低記憶體**；長時間隱藏時要自行呼叫 `SetMemoryUsageTargetLevel(Low)`，或直接銷毀視窗 |
 
@@ -302,7 +302,7 @@ tauri = { version = "2.12.5", features = ["tray-icon"] }   # tray-icon = 核心�
 
 ### 4.2 建議
 
-- **elf-core**：只定義 `CredentialStore` trait，例如 `put(ref) / get(ref) / delete(ref)`，DB 中只存 `credential_ref`。不依賴任何 keyring crate，Linux CI 用記憶體 fake。
+- **lumanote-core**：只定義 `CredentialStore` trait，例如 `put(ref) / get(ref) / delete(ref)`，DB 中只存 `credential_ref`。不依賴任何 keyring crate，Linux CI 用記憶體 fake。
 - **src-tauri**：
 
   ```toml
@@ -333,7 +333,7 @@ tauri = { version = "2.12.5", features = ["tray-icon"] }   # tray-icon = 核心�
 
 ---
 
-## 5 SQLite（elf-core，不依賴 Tauri）
+## 5 SQLite（lumanote-core，不依賴 Tauri）
 
 ### 5.1 選項比較（查核日 2026-11-11）
 
@@ -341,7 +341,7 @@ tauri = { version = "2.12.5", features = ["tray-icon"] }   # tray-icon = 核心�
 | --- | --- | --- |
 | `rusqlite` + `bundled` | 0.42.0（**2026-11-11 當天發布**）、0.41.1（2026-10-28），MSRV 1.89 | 同步 API，最輕量。`bundled` 自帶 SQLite：0.41.1（libsqlite3-sys 0.39.0）為 **SQLite 3.54.0**，0.42.0（libsqlite3-sys 0.40.0）為 3.54.1。Windows 不需要另外安裝 SQLite |
 | `sqlx`（sqlite） | 0.9.0（2026-05-21），MSRV 1.94 | async；編譯期 `query!` 需要 `DATABASE_URL` 或 offline 檔，增加 CI 設定成本；連線池對單機單寫入者用處不大 |
-| `tauri-plugin-sql` | 2.6.0 | **依賴 `tauri ^2.12` 與 `sqlx ^0.8`**，違反 §3.1「elf-core 不得相依 Tauri」，而且設計上把 SQL 開放給前端。**排除** |
+| `tauri-plugin-sql` | 2.6.0 | **依賴 `tauri ^2.12` 與 `sqlx ^0.8`**，違反 §3.1「lumanote-core 不得相依 Tauri」，而且設計上把 SQL 開放給前端。**排除** |
 
 遷移工具：
 
@@ -350,12 +350,12 @@ tauri = { version = "2.12.5", features = ["tray-icon"] }   # tray-icon = 核心�
 | `rusqlite_migration` | **2.7.0**（2026-11-10），MSRV 1.89 | 依賴 **`rusqlite ^0.41.0`**。用 `PRAGMA user_version` 記錄版本，不建額外表。`from-directory` feature 可用 `include_dir!` 讀 `migrations/` 資料夾。README 範例中就有啟用 WAL |
 | `refinery` | 0.10.0（2026-10-02） | 可行，但用額外表記錄，較重 |
 
-**關鍵版本陷阱【事實】**：`rusqlite_migration 2.7.0` 的依賴是 `rusqlite ^0.41.0`，Cargo 不會把 0.42 視為相容。若 elf-core 寫 `rusqlite = "0.42"`，就會同時編譯兩份 libsqlite3-sys，並因 `links = "sqlite3"` 衝突而**無法建置**。
+**關鍵版本陷阱【事實】**：`rusqlite_migration 2.7.0` 的依賴是 `rusqlite ^0.41.0`，Cargo 不會把 0.42 視為相容。若 lumanote-core 寫 `rusqlite = "0.42"`，就會同時編譯兩份 libsqlite3-sys，並因 `links = "sqlite3"` 衝突而**無法建置**。
 
 ### 5.2 建議（可貼用）
 
 ```toml
-# crates/elf-core/Cargo.toml
+# crates/lumanote-core/Cargo.toml
 rusqlite = { version = "=0.41.1", features = ["bundled"] }
 rusqlite_migration = { version = "2.7.0", features = ["from-directory"] }
 include_dir = "0.7"
@@ -412,7 +412,7 @@ DB 位置建議放在 `app_local_data_dir()`，避免 OneDrive 同步的資料�
 | 工具 | 版本與日期 | Tauri 2 相容 | 維護狀態 | 能力 |
 | --- | --- | --- | --- | --- |
 | `tauri-specta` | **2.0.0-rc.28（2026-11-11 當天）**；穩定版 1.0.2 僅適用 Tauri v1 | 是（依賴 `tauri ^2`，並開啟 tauri 的 `specta` feature） | 活躍，最近 commit 是 2026-11-11 | 同時產生**命令包裝函式與事件型別**；支援 `Channel<T>`；`ErrorHandlingMode` 可以選 Throw、Result、DataError |
-| `specta` / `specta-typescript` | =2.0.0-rc.28（2026-11-05）/ 0.0.15 | – | 活躍 | **不依賴 Tauri**，elf-core 可以 derive `specta::Type`；有 chrono、uuid、jiff、time、serde_json 等 feature |
+| `specta` / `specta-typescript` | =2.0.0-rc.28（2026-11-05）/ 0.0.15 | – | 活躍 | **不依賴 Tauri**，lumanote-core 可以 derive `specta::Type`；有 chrono、uuid、jiff、time、serde_json 等 feature |
 | `ts-rs` | **12.0.1**（2026-01-31），MSRV 1.78 | 與 Tauri 無關 | 活躍，最近 commit 是 2026-11-09 | 只產生型別，**不產生命令包裝**，`invoke` 名稱與參數需要手寫或另外處理 |
 | `taurpc` | 0.8.2（2026-07-03） | 【未能查證】細節 | – | 另一套 RPC 風格，本週不建議引入 |
 
@@ -423,7 +423,7 @@ DB 位置建議放在 `app_local_data_dir()`，避免 OneDrive 同步的資料�
 建議（可貼用）：
 
 ```toml
-# crates/elf-core/Cargo.toml（不依賴 Tauri）
+# crates/lumanote-core/Cargo.toml（不依賴 Tauri）
 specta = { version = "=2.0.0-rc.28", features = ["derive", "chrono"] }  # 依實際時間型別選 chrono / jiff / time
 
 # src-tauri/Cargo.toml
@@ -600,7 +600,7 @@ windows = { version = "0.62.2", features = [
 2. **§10「API key 與 OAuth token 存於作業系統憑證儲存」**：Windows Credential Manager 單筆上限 2560 bytes，大型 OAuth token 可能放不下，需要補一條策略（§4.2）。
 3. **§11 背景生命週期**：手冊只寫到「完整退出或關機時無法提醒」，沒有提到 **Modern Standby 睡眠期間桌面程式會被暫停**，提醒只能在喚醒後補送。建議補上。
 4. **§13、§14 測試**：通知只在**安裝版**正確顯示（dev 模式顯示 PowerShell），所以提醒相關的驗收必須用 NSIS 安裝版，週計畫要預留打包時間。
-5. **§3.1 elf-core 相依限制**：採用 tauri-specta 時，elf-core 需要依賴 `specta`（不是 Tauri），符合字面規定，但要在手冊中明確允許。
+5. **§3.1 lumanote-core 相依限制**：採用 tauri-specta 時，lumanote-core 需要依賴 `specta`（不是 Tauri），符合字面規定，但要在手冊中明確允許。
 6. **§12 前端命令**：建議新增 `set_api_key` / `has_api_key` / `delete_api_key`（只寫入，不可讀出），以及 `open_panel`（給浮動入口用）。
 
 ## 10 未能查證的項目一覽

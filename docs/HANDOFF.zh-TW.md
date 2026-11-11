@@ -10,7 +10,7 @@
 
 ## 各部分現況
 
-### Rust 核心 `crates/elf-core`
+### Rust 核心 `crates/lumanote-core`
 
 約 22,000 行，321 項測試通過（Linux）。不依賴 Tauri 與 Windows。
 
@@ -24,7 +24,7 @@
 | `model` | 統一契約、Mock 適配器、Anthropic Messages 與 OpenAI Chat Completions 適配器、SSE 解析、HTTP 傳輸 | 完成，**僅以錄製樣本測試，未連過真實 API** |
 | 記憶、活動彙整、習慣建議、模型路由與備援 | 資料表已建立 | 未實作 |
 
-### 桌面外殼 `src-tauri`（crate `elf-shell`）
+### 桌面外殼 `src-tauri`（crate `lumanote-shell`）
 
 24 項測試通過。已在使用者的 Windows 11 上以 `npm run tauri dev` 建置並執行。
 
@@ -34,7 +34,7 @@
 - 單一執行個體。
 - 浮動視窗：透明、可拖曳、輪盤展開時以精靈為中心放大、位置保存與還原。
 - 命令只有三個：`app_info`、`open_window`、`set_floating_expanded`。
-- **`elf-core` 列為相依套件但沒有被呼叫。**
+- **`lumanote-core` 列為相依套件但沒有被呼叫。**
 
 ### 前端 `src`
 
@@ -73,8 +73,8 @@
 
 ## 接手後的工作順序
 
-1. **在 Windows 上跑一次核心測試。** `cargo test -p elf-core`。這會第一次執行 Windows 專屬的路徑測試，預期可能有需要修正的地方。建議同時設定 CI 在 Windows 上跑。
-2. **把核心接上外殼（最重要）。** 讓 `submit_task`、`cancel_task`、`get_task`、`list_tasks`、`respond_to_approval`、對話、模型設定等命令呼叫 `elf-core`：
+1. **在 Windows 上跑一次核心測試。** `cargo test -p lumanote-core`。這會第一次執行 Windows 專屬的路徑測試，預期可能有需要修正的地方。建議同時設定 CI 在 Windows 上跑。
+2. **把核心接上外殼（最重要）。** 讓 `submit_task`、`cancel_task`、`get_task`、`list_tasks`、`respond_to_approval`、對話、模型設定等命令呼叫 `lumanote-core`：
    - 資料庫放在應用程式資料目錄；啟動時跑 migration 與 `recover_after_restart`。
    - 憑證存 Windows 認證管理員，實作 `CredentialStore`；前端只能寫入，不能讀回。
    - 把協調器的 `EventSink` 事件轉成 Tauri 事件送給前端。
@@ -119,7 +119,7 @@
 
 - `tests-ui/capture.cjs` 需要 Playwright，但它不在 `package.json` 的相依套件裡（開發環境預先安裝了）。接手後若要跑介面檢查，需自行安裝。
 - 尚未設定 CI。
-- 測試樣本有兩份（`docs/research/fixtures` 與 `crates/elf-core/fixtures`），修改時要同步。
+- 測試樣本有兩份（`docs/research/fixtures` 與 `crates/lumanote-core/fixtures`），修改時要同步。
 - `.gitattributes` 把 `.sse` 與 `.http` 標為二進位，避免在 Windows 上被轉換換行而使樣本測試失敗；請勿移除。
 
 ## 尚待使用者決定或提供

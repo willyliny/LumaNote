@@ -1,4 +1,4 @@
-# 精靈助手：Windows 11 第一次建置與執行
+# LumaNote：Windows 11 第一次建置與執行
 
 這份文件給「第一次在自己的 Windows 11 電腦上把 Tauri 外殼跑起來」的人，不需要懂 Rust 或 Tauri。
 目標只有一個：確認工具鏈能用，並看到三個視窗與系統匣的基本行為。**這一版還沒有接上任何真正的 AI 功能**，畫面裡的內容是示範用的假資料。
@@ -46,7 +46,7 @@ winget install Microsoft.VisualStudio.2022.BuildTools --override "--wait --passi
 在 PowerShell 輸入：
 
 ```powershell
-cd C:\Users\a0925\Desktop\phison_elf
+cd C:\Users\a0925\Desktop\LumaNote
 npm install
 npm run tauri dev
 ```
@@ -69,8 +69,8 @@ npm run tauri dev 2>&1 | Tee-Object -FilePath tauri-dev.log
 編譯完成後會自動開啟：
 
 1. **浮動小精靈**：一個很小的透明視窗（128 x 128，小精靈本體約 96 x 96，周圍留白供傾斜與漂浮），沒有邊框，永遠在最上層，不出現在工作列。可以用滑鼠按住拖曳。
-2. **主面板**：約 420 x 720 的一般視窗，標題「精靈助手」，裡面是示範用的對話與今日畫面。
-3. **系統匣圖示**：一滴青綠色水滴，滑鼠停上去會顯示「精靈助手（左鍵開啟，右鍵選單）」。**Windows 11 可能把它收在 `^`（顯示隱藏的圖示）裡面**，不一定直接顯示在工作列右下角（社群回報新程式的圖示常被放進這個溢出區；我沒有查到微軟官方文件明確寫出預設值，所以請以你的畫面為準）。找不到時，先按 `^` 展開。想讓它固定顯示：設定 → 個人化 → 工作列 → 展開「其他系統匣圖示」→ 把「精靈助手」（開發模式下可能顯示為 `elf-shell`）打開。也可以把圖示從 `^` 裡直接拖到工作列右下角。
+2. **主面板**：約 420 x 720 的一般視窗，標題「LumaNote」，裡面是示範用的對話與今日畫面。
+3. **系統匣圖示**：一滴青綠色水滴，滑鼠停上去會顯示「LumaNote（左鍵開啟，右鍵選單）」。**Windows 11 可能把它收在 `^`（顯示隱藏的圖示）裡面**，不一定直接顯示在工作列右下角（社群回報新程式的圖示常被放進這個溢出區；我沒有查到微軟官方文件明確寫出預設值，所以請以你的畫面為準）。找不到時，先按 `^` 展開。想讓它固定顯示：設定 → 個人化 → 工作列 → 展開「其他系統匣圖示」→ 把「LumaNote」（開發模式下可能顯示為 `lumanote-shell`）打開。也可以把圖示從 `^` 裡直接拖到工作列右下角。
 4. **系統匣選單**：在圖示上按**右鍵**，應該出現 開啟、暫停觀察、勿擾、結束。「暫停觀察」與「勿擾」是可打勾的開關（目前只會記住打勾狀態，沒有實際作用）。
 
 請逐項確認：
@@ -86,20 +86,20 @@ npm run tauri dev 2>&1 | Tee-Object -FilePath tauri-dev.log
 - **第二次啟動會把主面板叫出來，不會多一個程式**：保持第一個還在執行，**另開一個新的 PowerShell**，輸入下面指令（不要再執行 `npm run tauri dev`，那會因為 5173 連接埠已被占用而失敗，這是正常的）：
 
   ```powershell
-  cd C:\Users\a0925\Desktop\phison_elf
-  .\target\debug\elf-shell.exe
+  cd C:\Users\a0925\Desktop\LumaNote
+  .\target\debug\lumanote-shell.exe
   ```
 
   預期：沒有出現新視窗或新圖示，而是原本的主面板被帶到最前面（如果它被隱藏了就會顯示出來）。
 - 系統匣選單點 **結束** → 所有視窗與系統匣圖示消失，終端機的 `npm run tauri dev` 也結束（這才是真正離開）。
 
-按 F12（或在主面板按右鍵 → 檢查）開啟開發者工具，Console 應該看到一行 `[elf] app_info {app_name: ..., app_version: "0.1.0", tauri_version: "2.12.5"}`。這代表前端真的呼叫到了 Rust。
+按 F12（或在主面板按右鍵 → 檢查）開啟開發者工具，Console 應該看到一行 `[lumanote] app_info {app_name: ..., app_version: "0.1.0", tauri_version: "2.12.5"}`。這代表前端真的呼叫到了 Rust。
 
 ### 這一版已知的樣子
 
 - 小精靈視窗平常是 128 x 128；滑鼠停在上面時會變成 344 x 344（放射選單，六個項目與 96 px 小精靈之間至少 8 px），離開後縮回 128 x 128。小精靈中心位置不變；舊版（96 x 96 視窗）儲存的位置會自動換算，保持小精靈中心不動。
 - 2.5D 造型（設定 → 助手造型，標示「2.5D」）會輕微漂浮、眨眼、滑鼠靠近時微傾；視窗隱藏或 30 秒沒有滑鼠動作時動畫暫停；系統開啟「減少動態」時改用平面圖。
-- 小精靈的位置會記住（存在應用程式設定資料夾，檔名 `floating-position.json`，通常在 `%APPDATA%\com.phisonelf.assistant\`）。第一次執行、或存的位置已不在任何螢幕上（例如拔掉外接螢幕）時，會放在主螢幕工作區的右下角。
+- 小精靈的位置會記住（存在應用程式設定資料夾，檔名 `floating-position.json`，通常在 `%APPDATA%\com.lumanote.app\`）。第一次執行、或存的位置已不在任何螢幕上（例如拔掉外接螢幕）時，會放在主螢幕工作區的右下角。
 - 小精靈點下去只會開主面板，這是刻意的：它不能接收鍵盤輸入。
 
 ### 本版請檢查（新增）
@@ -144,13 +144,13 @@ npm run tauri dev 2>&1 | Tee-Object -FilePath tauri-dev.log
 | `npm : 因為這個系統上已停用指令碼執行，所以無法載入檔案 npm.ps1` | PowerShell 執行原則 | 改用 `npm.cmd install`、`npm.cmd run tauri dev`，或執行 `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` |
 | `Port 5173 is already in use` | 前端伺服器重複啟動（或上次沒關乾淨） | 關掉其他 `npm run dev` / `tauri dev`，或重開機 |
 | 視窗打開但是**全白或顯示連線被拒絕** | 前端伺服器沒起來或位址不通 | 另開瀏覽器試 `http://127.0.0.1:5173/panel.html`，能開就代表伺服器正常，把終端機訊息與 F12 Console 內容貼回來 |
-| `failed to run custom build command for elf-shell`，內文提到 permission、capability 或 icon | 外殼設定檔有誤（我們的問題） | 把這段錯誤整段貼回來 |
+| `failed to run custom build command for lumanote-shell`，內文提到 permission、capability 或 icon | 外殼設定檔有誤（我們的問題） | 把這段錯誤整段貼回來 |
 | `error: failed to download` / `timed out` / `SSL` | 網路、公司或學校代理、防毒擋掉 crates.io | 換網路再試一次；仍失敗就貼出完整訊息 |
 | `EBADENGINE` 或 Vite 要求的 Node 版本警告 | Node 太舊 | 安裝 Node LTS（v20.19 以上或 v22.12 以上）。Vite 7 以上不支援更舊的 Node |
 | `Cannot find native binding`（常見於 rollup、esbuild、lightningcss 等的原生套件） | `package-lock.json` 或 `node_modules` 是在別的作業系統（Linux）產生的，沒有包含 Windows 版的原生套件 | **鎖定檔必須在 Windows 上產生。** 在專案資料夾刪除 `node_modules` 資料夾與 `package-lock.json`，再執行 `npm install`（PowerShell：`Remove-Item -Recurse -Force node_modules; Remove-Item package-lock.json; npm install`）。完成後把新的 `package-lock.json` 一併交回，之後就不要再從 Linux 覆蓋它 |
-| 小精靈看不到、圖示也找不到 | 圖示被收進 `^`；或小精靈的存檔位置異常 | 先按 `^` 找圖示；左鍵點它叫出主面板。要重設小精靈位置，結束程式後刪除 `%APPDATA%\com.phisonelf.assistant\floating-position.json` 再啟動 |
+| 小精靈看不到、圖示也找不到 | 圖示被收進 `^`；或小精靈的存檔位置異常 | 先按 `^` 找圖示；左鍵點它叫出主面板。要重設小精靈位置，結束程式後刪除 `%APPDATA%\com.lumanote.app\floating-position.json` 再啟動 |
 | 編譯過程中出現檔案被占用、存取被拒 | 防毒軟體掃描 `target` 資料夾 | 暫時把專案資料夾加入防毒排除，或重試一次 |
-| `elf-core` 裡面的編譯錯誤 | 核心程式正在由其他人修改 | 這不是你的環境問題，貼回來即可 |
+| `lumanote-core` 裡面的編譯錯誤 | 核心程式正在由其他人修改 | 這不是你的環境問題，貼回來即可 |
 
 ### 出問題時請貼回來這些
 

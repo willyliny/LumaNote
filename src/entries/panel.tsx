@@ -4,7 +4,7 @@ import { boot } from './boot';
 import { PanelApp } from '../features/PanelApp';
 
 boot();
-document.title = '精靈助手';
+document.title = 'LumaNote';
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <PanelApp />

@@ -22,7 +22,7 @@ import { DEFAULT_SKIN_ID, getSkin, isComplete } from '../skins/registry';
 import type { CompleteSkin } from '../skins/types';
 import { notify, reportError } from './app-store';
 
-const CACHE_KEY = 'elf-skin';
+const CACHE_KEY = 'luma-skin';
 
 interface AppearanceState {
   loaded: boolean;

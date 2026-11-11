@@ -18,7 +18,7 @@
 | --- | --- | --- |
 | [research/R1-tauri-windows.zh-TW.md](research/R1-tauri-windows.zh-TW.md) | Tauri 2 與 Windows 的版本、外掛、已知問題查證 | 查證日 2026/11/11；Windows 行為多數未實測 |
 | [research/R2-model-protocols.zh-TW.md](research/R2-model-protocols.zh-TW.md) | Anthropic Messages、OpenAI Chat Completions 等協定的線路格式 | 依官方文件，未呼叫真實 API；報告內標有未驗證項目 |
-| `research/fixtures/` | 串流樣本原稿 | 測試實際使用的是 `crates/elf-core/fixtures/` 的複本，修改時兩邊都要改 |
+| `research/fixtures/` | 串流樣本原稿 | 測試實際使用的是 `crates/lumanote-core/fixtures/` 的複本，修改時兩邊都要改 |
 | [security/SECURITY_REVIEW.zh-TW.md](security/SECURITY_REVIEW.zh-TW.md) | 獨立安全審查的 16 項發現 | 針對較早的程式碼；全部已修正，處理結果見 HANDOFF 與手冊 8.1 |
 | `briefs/` | 給視覺設計的三份簡報 | 素材格式契約以最後兩份為準 |
 | `archive/` | 手冊 0.2 原稿 | 僅供對照 |

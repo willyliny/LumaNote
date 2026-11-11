@@ -69,7 +69,7 @@ Rust 程式分成兩層，避免業務邏輯綁死在 Tauri 與 Windows 上：
 
 | Crate | 內容 | 相依限制 |
 | --- | --- | --- |
-| `crates/elf-core` | 任務狀態機、協調器、模型契約與適配器、工具登錄表、政策引擎、排程器、記憶、SQLite 存取 | 不得相依 Tauri 或 Windows API；可在 Linux CI 完整編譯與測試 |
+| `crates/lumanote-core` | 任務狀態機、協調器、模型契約與適配器、工具登錄表、政策引擎、排程器、記憶、SQLite 存取 | 不得相依 Tauri 或 Windows API；可在 Linux CI 完整編譯與測試 |
 | `src-tauri` | IPC 命令、事件轉送、視窗與系統匣、通知、憑證儲存、Windows 活動採樣 | 只做轉接；不放業務判斷 |
 
 核心透過 trait 取得外部能力：`Clock`（時間，測試可注入假時鐘）、`Notifier`（通知）、`CredentialStore`（憑證）、`ActivitySource`（活動訊號）、`HttpTransport`（模型與搜尋連線）。排程、補送、冷卻、逾時等時間相關邏輯一律經由 `Clock`，才能用事件回放驗證而不必等真實時間。
@@ -362,7 +362,7 @@ src/
   features/settings/
   components/
   lib/ipc.ts
-crates/elf-core/
+crates/lumanote-core/
   migrations/
   src/agent/
   src/tools/
@@ -382,7 +382,7 @@ src-tauri/
   src/lib.rs            # 視窗、系統匣、命令（目前）
   src/floating.rs       # 浮動視窗展開、位置保存
   src/geometry.rs       # 純幾何計算
-  src/commands/         # 規劃中：接上 elf-core 的 IPC 命令
+  src/commands/         # 規劃中：接上 lumanote-core 的 IPC 命令
   src/observation/windows/  # 規劃中
   src/platform/         # 規劃中：通知、憑證
 scripts/                # 造型素材同步與驗證、常數一致性檢查
@@ -438,7 +438,7 @@ docs/                   # 見 docs/README.md
 | 效能目標 | 無模型推論時平均 CPU 小於 1%；整體記憶體目標小於 250 MB（含 WebView2 子程序，主視窗隱藏狀態下量測）；在指定基準機量測 |
 | 狀態機 | 轉移表每一條合法與非法轉移皆有測試；無證據不得進入 completed |
 | 崩潰恢復 | 在每個工具步驟前後強制終止程序，重啟後無重複外部寫入，未完成步驟狀態正確 |
-| 可測性 | elf-core 在無 Tauri、無 Windows 的環境通過全部測試；時間相關案例以假時鐘回放 |
+| 可測性 | lumanote-core 在無 Tauri、無 Windows 的環境通過全部測試；時間相關案例以假時鐘回放 |
 
 必測案例包含：檔名含特殊字元、路徑穿越與連結越界、文件中的提示注入、行事曆 token 過期、外部寫入後連線中斷、時區改變、多螢幕拔除、磁碟滿、資料庫 migration 失敗。
 
@@ -457,7 +457,7 @@ docs/                   # 見 docs/README.md
 0.3（2026/11/11）相對 0.2 的變更：
 
 1. 時程由 8 至 12 週改為一週衝刺，範圍分為 P0、P1、延後三級，加入每日關卡（第 13 章）。
-2. Rust 拆為 elf-core 與 src-tauri 兩層，外部能力以 trait 注入，使核心可脫離 Windows 測試（3.1、第 12 章）。
+2. Rust 拆為 lumanote-core 與 src-tauri 兩層，外部能力以 trait 注入，使核心可脫離 Windows 測試（3.1、第 12 章）。
 3. 任務狀態由示意圖改為轉移表，新增 paused 與 uncertain，定義重啟時的狀態歸屬（7.5）。
 4. 資料模型補上 conversations、messages、task_events、artifacts、consents、exclusions、settings，並修正 grants、task_steps、model_routes 欄位（第 9 章）。
 5. 新增不受信任內容的任務層級標記與強制確認規則（第 8 章）。

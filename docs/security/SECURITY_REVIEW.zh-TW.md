@@ -1,14 +1,14 @@
-# 精靈助手 elf-core 安全審查報告
+# LumaNote lumanote-core 安全審查報告
 
-審查對象：凍結快照 `scratchpad/review/crates/elf-core`（對照《技術手冊》7.5、8、9、10、14 節）
+審查對象：凍結快照 `scratchpad/review/crates/lumanote-core`（對照《技術手冊》7.5、8、9、10、14 節）
 審查方式：逐檔閱讀與實際重現。重現用的程式放在另一份副本 `scratchpad/repro`，快照本身只新增了根目錄的 `Cargo.toml` 與 `Cargo.lock`（這兩個檔是建置所需）以及本報告。
-原有測試：`cargo test -p elf-core`，154 項全部通過。
+原有測試：`cargo test -p lumanote-core`，154 項全部通過。
 
-重現測試放在 `/tmp/claude-0/-home-claude/bb3ffb43-2519-577c-ac20-442189b5ab80/scratchpad/repro/crates/elf-core/src/agent/tests.rs` 檔尾，名稱為 `review_r1` 到 `review_r8`。執行方式：
+重現測試放在 `/tmp/claude-0/-home-claude/bb3ffb43-2519-577c-ac20-442189b5ab80/scratchpad/repro/crates/lumanote-core/src/agent/tests.rs` 檔尾，名稱為 `review_r1` 到 `review_r8`。執行方式：
 
 ```
 cd /tmp/claude-0/-home-claude/bb3ffb43-2519-577c-ac20-442189b5ab80/scratchpad/repro
-cargo test -p elf-core --offline review_ -- --nocapture
+cargo test -p lumanote-core --offline review_ -- --nocapture
 ```
 
 這 8 項測試全部通過。每項測試的斷言寫的都是「漏洞確實發生」，所以通過就代表問題已重現。

@@ -12,12 +12,12 @@
 
 版本鎖定 Tauri 2.x；3.0 已有 alpha，不採用。確切版本見 `src-tauri/Cargo.toml` 與 `package.json`。
 
-核心 `elf-core` 可以在 Linux、macOS、Windows 上編譯與測試。桌面外殼的目標平台只有 Windows；在 Linux 上可以編譯檢查（需要 WebKitGTK 開發套件），但 Windows 行為必須在 Windows 上驗證。
+核心 `lumanote-core` 可以在 Linux、macOS、Windows 上編譯與測試。桌面外殼的目標平台只有 Windows；在 Linux 上可以編譯檢查（需要 WebKitGTK 開發套件），但 Windows 行為必須在 Windows 上驗證。
 
 ## 架構導覽
 
 ```text
-前端 (src)  ──IPC──>  外殼 (src-tauri)  ──呼叫──>  核心 (crates/elf-core)
+前端 (src)  ──IPC──>  外殼 (src-tauri)  ──呼叫──>  核心 (crates/lumanote-core)
                                                     │
                                                     ├─ agent      協調器：模型循環與工具執行
                                                     ├─ model      統一模型契約與各協定適配器
@@ -40,8 +40,8 @@
 ## 測試
 
 ```bash
-cargo test -p elf-core                                   # 核心
-cargo test -p elf-shell                                  # 外殼的幾何與位置保存
+cargo test -p lumanote-core                                   # 核心
+cargo test -p lumanote-shell                                  # 外殼的幾何與位置保存
 cargo clippy --workspace --all-targets -- -D warnings    # 靜態檢查
 npm run build                                            # 前端型別檢查與建置
 npm run test:layered                                     # 分層素材驗證器
@@ -63,7 +63,7 @@ node tests-ui/capture.cjs http://localhost:4173
 
 ### 新增一個工具
 
-1. 在 `crates/elf-core/src/tools/` 新增檔案，實作 `Tool` trait：名稱、給模型看的說明、參數的 JSON Schema、需要的授權動作、**動作類別**（`action_class`，必填；沒有明確歸類的一律視為外部寫入）、副作用類別、逾時、輸出上限、`execute`。
+1. 在 `crates/lumanote-core/src/tools/` 新增檔案，實作 `Tool` trait：名稱、給模型看的說明、參數的 JSON Schema、需要的授權動作、**動作類別**（`action_class`，必填；沒有明確歸類的一律視為外部寫入）、副作用類別、逾時、輸出上限、`execute`。
 2. 工具結果要標明信任等級。模型讀到的任何非使用者親手輸入的內容都是不受信任的，包含本機檔案。
 3. 寫入類工具要回傳證據（成果檔或可驗證的結果），並且能在當機後重跑而不重複執行。
 4. 對外傳送、發布、付款、刪除類的工具，每次都需要使用者確認，不接受常設授權；這由政策引擎依動作類別強制，工具本身不需要也不應該繞過。
@@ -73,16 +73,16 @@ node tests-ui/capture.cjs http://localhost:4173
 
 ### 新增一個模型協定
 
-1. 在 `crates/elf-core/src/model/adapters/` 新增適配器，實作 `ModelAdapter`。請求組裝、串流轉譯、結束原因對應、用量對應、錯誤對應都在這裡；工具呼叫的片段組裝使用共用的 `ToolCallAssembler`，SSE 解析使用 `model/sse.rs`。
+1. 在 `crates/lumanote-core/src/model/adapters/` 新增適配器，實作 `ModelAdapter`。請求組裝、串流轉譯、結束原因對應、用量對應、錯誤對應都在這裡；工具呼叫的片段組裝使用共用的 `ToolCallAssembler`，SSE 解析使用 `model/sse.rs`。
 2. 不直接使用 HTTP 客戶端，透過 `HttpTransport`。金鑰在送出請求時才從 `CredentialStore` 讀取，只送往設定檔的主機，不得出現在錯誤、日誌、事件或除錯輸出中。
-3. 準備串流樣本放進 `crates/elf-core/fixtures/<協定>/`，用 `ReplayTransport` 以多種切塊大小回放測試。至少涵蓋：純文字、分片的工具呼叫、平行工具呼叫、串流中途錯誤、限流、斷線、格式錯誤的參數、取消。
+3. 準備串流樣本放進 `crates/lumanote-core/fixtures/<協定>/`，用 `ReplayTransport` 以多種切塊大小回放測試。至少涵蓋：純文字、分片的工具呼叫、平行工具呼叫、串流中途錯誤、限流、斷線、格式錯誤的參數、取消。
 4. 加一個協調器層級的測試，用新適配器跑通「筆記 → 待辦 → 文件 → 完成」，確認核心邏輯不需修改。
 
 契約見手冊 7.1。供應商的不透明狀態（例如思考區塊簽章）只回傳給同一供應商；切換供應商只能在一輪工具呼叫完整結束之後。
 
 ### 修改資料庫結構
 
-1. 在 `crates/elf-core/migrations/` 新增下一個編號的 SQL 檔。**不要修改已存在的 migration。**
+1. 在 `crates/lumanote-core/migrations/` 新增下一個編號的 SQL 檔。**不要修改已存在的 migration。**
 2. 在 `src/storage/migrate.rs` 的 `MIGRATIONS` 加一筆。
 3. 每個 migration 在單一交易內執行，失敗時資料庫不變。補一個測試：用有真實資料列的舊版資料庫升級，確認沒有遺失。
 
@@ -95,7 +95,7 @@ node tests-ui/capture.cjs http://localhost:4173
 
 ### 調整浮動視窗或輪盤的尺寸
 
-尺寸在兩處各定義一次：`src/features/floating/layout.ts`（前端）與 `src-tauri/src/geometry.rs`（外殼），加上 `src-tauri/tauri.conf.json` 的視窗初始大小。三者必須一致，由 `cargo test -p elf-shell` 的 `constants_match_frontend` 與建置前的 `npm run check:floating` 檢查。改尺寸時若會影響已保存的位置，要處理 `geometry.rs` 中的位置版本換算（`SAVED_POSITION_VERSION`）。
+尺寸在兩處各定義一次：`src/features/floating/layout.ts`（前端）與 `src-tauri/src/geometry.rs`（外殼），加上 `src-tauri/tauri.conf.json` 的視窗初始大小。三者必須一致，由 `cargo test -p lumanote-shell` 的 `constants_match_frontend` 與建置前的 `npm run check:floating` 檢查。改尺寸時若會影響已保存的位置，要處理 `geometry.rs` 中的位置版本換算（`SAVED_POSITION_VERSION`）。
 
 ### 新增一個 IPC 命令
 
