@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type PointerEvent } from 'react';
 import { ipc } from '../../lib/ipc';
+import { startWindowDrag } from '../../lib/ipc-tauri';
 import { t } from '../../lib/strings';
 import { Icon } from '../../components/Icon';
 import { Sprite } from '../../components/Sprite';
@@ -123,6 +124,8 @@ function useWheel() {
 
   /** pointer entered the sprite or a wheel item */
   const enter = (e?: PointerEvent) => {
+    // a native window drag swallows the pointerup, so clear a stale press once no button is down
+    if (e && e.buttons === 0) pressed.current = false;
     window.clearTimeout(closeTimer.current);
     closeTimer.current = undefined;
     const p = phaseRef.current;
@@ -177,8 +180,10 @@ function useWheel() {
     };
   }, [close]);
 
-  return { phase, offset, enter, leave, press, close };
+  return { phase, phaseRef, offset, enter, leave, press, close };
 }
+
+const DRAG_THRESHOLD_PX = 4;
 
 export function FloatingApp() {
   const live = useApp(deriveSpriteState);
@@ -188,6 +193,28 @@ export function FloatingApp() {
   const [dismissed, setDismissed] = useState<string | null>(null);
   const wheel = useWheel();
   const dockTimer = useRef<number | undefined>(undefined);
+
+  // press-and-move on the sprite drags the window; a press without movement stays a click
+  const dragOrigin = useRef<{ x: number; y: number } | null>(null);
+  const dragged = useRef(false);
+  const onSpriteDown = (e: PointerEvent) => {
+    wheel.press();
+    dragged.current = false;
+    dragOrigin.current = e.button === 0 ? { x: e.screenX, y: e.screenY } : null;
+  };
+  const onSpriteMove = (e: PointerEvent) => {
+    wheel.enter(e);
+    const o = dragOrigin.current;
+    if (!o || e.buttons !== 1) {
+      dragOrigin.current = null;
+      return;
+    }
+    if (Math.hypot(e.screenX - o.x, e.screenY - o.y) < DRAG_THRESHOLD_PX) return;
+    if (wheel.phaseRef.current !== 'closed') return; // wait until the window is back to its small size
+    dragOrigin.current = null;
+    dragged.current = true;
+    void startWindowDrag().catch((err) => console.error('startDragging failed', err));
+  };
 
   const suggestion = useApp((s) => s.today?.suggestions[0] ?? null);
   const tasks = useApp((s) => s.tasks);
@@ -274,13 +301,19 @@ export function FloatingApp() {
       <div className="float__main" data-tauri-drag-region>
         <button
           className="float__sprite"
-          onClick={() => openPanel(state === 'awaiting' ? 'tasks' : state === 'suggestion' ? 'today' : null)}
+          onClick={() => {
+            if (dragged.current) {
+              dragged.current = false; // the press became a drag: not a click
+              return;
+            }
+            openPanel(state === 'awaiting' ? 'tasks' : state === 'suggestion' ? 'today' : null);
+          }}
           aria-label={t.sprite.describe[state]}
           title={t.sprite.describe[state]}
           onPointerEnter={wheel.enter}
-          onPointerMove={wheel.enter} /* idempotent: re-arms if an enter event was missed */
+          onPointerMove={onSpriteMove} /* also re-arms the wheel if an enter event was missed */
           onPointerLeave={wheel.leave}
-          onPointerDown={wheel.press}
+          onPointerDown={onSpriteDown}
         >
           <Sprite state={state} size="100%" title="" />
         </button>

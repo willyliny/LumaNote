@@ -189,3 +189,16 @@ if (typeof window !== 'undefined' && isTauri()) {
     }
   })();
 }
+
+/**
+ * Start a native drag of the current window (used by the floating sprite).
+ * `data-tauri-drag-region` only fires when the pressed element itself carries the
+ * attribute, and the sprite button covers the whole window, so the drag is started
+ * explicitly once the pointer has moved past a small threshold.
+ * Outside Tauri this is a no-op.
+ */
+export async function startWindowDrag(): Promise<void> {
+  if (typeof window === 'undefined' || !isTauri()) return;
+  const { getCurrentWindow } = await import('@tauri-apps/api/window');
+  await getCurrentWindow().startDragging();
+}
