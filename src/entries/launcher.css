@@ -1,0 +1,22 @@
+.launcher {
+  max-width: 480px;
+  margin: var(--space-9) auto;
+  padding: 0 var(--space-5);
+  display: grid;
+  gap: var(--space-5);
+}
+.launcher h1 {
+  font-size: var(--text-xl);
+}
+.launcher p {
+  line-height: var(--leading-body);
+  color: var(--c-text-2);
+}
+.launcher ul {
+  display: grid;
+  gap: var(--space-3);
+}
+.launcher a.btn {
+  text-decoration: none;
+  justify-content: flex-start;
+}

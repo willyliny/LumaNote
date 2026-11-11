@@ -1,0 +1,112 @@
+.body-panel {
+  overflow: hidden;
+}
+.shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: min(100%, var(--size-panel-width));
+  margin: 0 auto;
+  background: var(--c-bg);
+  border-inline: var(--border-width) solid var(--c-border);
+  position: relative;
+}
+.shell__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-4) var(--space-3) var(--space-5);
+}
+.shell__sprite {
+  width: var(--size-sprite-header);
+  height: var(--size-sprite-header);
+  flex: none;
+}
+.shell__title {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: var(--space-1);
+}
+.shell__title h1 {
+  font-size: var(--text-lg);
+  font-weight: var(--weight-bold);
+}
+.shell__title p {
+  font-size: var(--text-xs);
+  color: var(--c-text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.shell__stale {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin: 0 var(--space-4) var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-sm);
+  background: var(--c-warn-soft);
+  color: var(--c-on-warn-soft);
+  font-size: var(--text-sm);
+}
+.tabs {
+  display: flex;
+  padding: 0 var(--space-4);
+  border-bottom: var(--border-width) solid var(--c-border);
+}
+.tabs__tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  flex: 1;
+  min-height: 40px;
+  border: 0;
+  background: none;
+  color: var(--c-text-2);
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+}
+.tabs__tab:hover {
+  color: var(--c-text);
+}
+.tabs__tab[aria-selected='true'] {
+  color: var(--c-primary);
+  font-weight: var(--weight-bold);
+}
+.tabs__tab[aria-selected='true']::after {
+  content: '';
+  position: absolute;
+  left: var(--space-4);
+  right: var(--space-4);
+  bottom: -1px;
+  height: 3px;
+  border-radius: var(--radius-xs) var(--radius-xs) 0 0;
+  background: var(--c-primary);
+}
+.tabs__badge {
+  min-width: 18px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--c-attn);
+  color: var(--c-surface);
+  font-size: var(--text-xs);
+  line-height: 18px;
+  text-align: center;
+}
+.shell__main {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.shell__main > * {
+  flex: 1;
+  min-height: 0;
+}
+.shell__scroll {
+  overflow-y: auto;
+}

@@ -1,0 +1,150 @@
+.body-floating[data-backdrop='1'],
+html[data-backdrop='1'] body {
+  background: var(--c-desktop-preview);
+}
+.float {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3);
+}
+.float--right {
+  flex-direction: row-reverse;
+}
+.float__main {
+  position: relative;
+  flex: none;
+  width: var(--size-sprite);
+  height: var(--size-sprite);
+}
+.float__sprite {
+  all: unset;
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+  border-radius: var(--radius-lg);
+}
+.float__sprite:focus-visible {
+  outline: var(--focus-ring-width) solid var(--c-focus);
+  outline-offset: var(--focus-ring-offset);
+}
+.float__collapse {
+  position: absolute;
+  top: calc(var(--space-3) * -1);
+  left: calc(var(--space-3) * -1);
+  background: var(--c-surface);
+  border: var(--border-width) solid var(--c-border);
+  box-shadow: var(--shadow-sm);
+  opacity: 0;
+  transition: opacity var(--motion-fast) var(--motion-ease);
+}
+.float--right .float__collapse {
+  left: auto;
+  right: calc(var(--space-3) * -1);
+}
+.float__main:hover .float__collapse,
+.float__main:focus-within .float__collapse {
+  opacity: 1;
+}
+
+/* the small, non-modal hint beside the sprite */
+.hint {
+  position: relative;
+  max-width: 190px;
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: var(--border-width) solid var(--c-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--c-surface);
+  box-shadow: var(--shadow-float);
+  animation: hint-in var(--motion-slow) var(--motion-ease) both;
+}
+.hint::before {
+  /* tail pointing at the sprite */
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: -6px;
+  width: 10px;
+  height: 10px;
+  margin-top: -5px;
+  background: var(--c-surface);
+  border-left: var(--border-width) solid var(--c-border-strong);
+  border-bottom: var(--border-width) solid var(--c-border-strong);
+  transform: rotate(45deg);
+}
+.float--right .hint::before {
+  left: auto;
+  right: -6px;
+  transform: rotate(-135deg);
+}
+.hint__text {
+  font-size: var(--text-sm);
+  line-height: var(--leading-tight);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.hint__actions {
+  display: flex;
+  gap: var(--space-2);
+}
+@keyframes hint-in {
+  from {
+    opacity: 0;
+    transform: translateX(-6px);
+  }
+}
+
+/* edge-docked, collapsed form: a slim strip with the sprite peeking out */
+.float--dock {
+  padding: 0;
+  gap: 0;
+}
+.float--left {
+  justify-content: flex-start;
+}
+.float--dock.float--right {
+  justify-content: flex-end;
+}
+.dockstrip {
+  all: unset;
+  position: relative;
+  box-sizing: border-box;
+  width: var(--size-dock-strip);
+  height: calc(var(--size-sprite) + var(--space-5));
+  overflow: hidden;
+  cursor: pointer;
+  background: var(--c-surface);
+  border: var(--border-width) solid var(--c-border-strong);
+  box-shadow: var(--shadow-md);
+}
+.float--dock.float--left .dockstrip {
+  border-left: 0;
+  border-radius: 0 var(--radius-lg) var(--radius-lg) 0;
+}
+.float--dock.float--right .dockstrip {
+  border-right: 0;
+  border-radius: var(--radius-lg) 0 0 var(--radius-lg);
+}
+.dockstrip:focus-visible {
+  outline: var(--focus-ring-width) solid var(--c-focus);
+  outline-offset: var(--focus-ring-offset);
+}
+.dockstrip__sprite {
+  position: absolute;
+  top: 50%;
+  width: calc(var(--size-sprite) * 0.85);
+  height: calc(var(--size-sprite) * 0.85);
+  margin-top: calc(var(--size-sprite) * -0.425);
+}
+.float--dock.float--left .dockstrip__sprite {
+  left: calc(var(--size-dock-strip) - var(--size-sprite) * 0.85 + var(--space-3));
+}
+.float--dock.float--right .dockstrip__sprite {
+  right: calc(var(--size-dock-strip) - var(--size-sprite) * 0.85 + var(--space-3));
+}

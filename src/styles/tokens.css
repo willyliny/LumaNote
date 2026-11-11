@@ -1,0 +1,269 @@
+/*
+ * 精靈助手 design tokens.
+ * Every colour, font, radius, spacing, shadow and motion duration lives here.
+ * Components reference only these variables. When final art arrives, edit THIS file only.
+ *
+ * Themes: light is the default; dark applies via the system preference unless
+ * <html data-theme="light"> is set, or always when <html data-theme="dark"> is set.
+ */
+
+:root {
+  color-scheme: light;
+
+  /* ---- colour: surfaces ---- */
+  --c-bg: #eef2f1;
+  --c-surface: #ffffff;
+  --c-surface-2: #f6f8f7;
+  --c-sunken: #e3e9e7;
+  --c-border: #cbd5d2;
+  --c-border-strong: #8d9d99;
+  --c-scrim: rgb(14 26 24 / 0.38);
+  --c-desktop-preview: #cfd8dc; /* only used to preview the transparent floating window */
+
+  /* ---- colour: text ---- */
+  --c-text: #16221f;
+  --c-text-2: #44554f;
+  --c-text-3: #596a65;
+  --c-text-disabled: #8b9995;
+
+  /* ---- colour: roles ---- */
+  --c-primary: #136468;
+  --c-primary-hover: #0d4e52;
+  --c-on-primary: #ffffff;
+  --c-primary-soft: #d8ecea;
+  --c-on-primary-soft: #0c4a4d;
+
+  --c-attn: #9a4f00; /* needs the user: approvals, pending decisions */
+  --c-attn-soft: #fce9cc;
+  --c-on-attn-soft: #653400;
+  --c-success: #1b6e3f;
+  --c-success-soft: #d9efe1;
+  --c-on-success-soft: #14522e;
+  --c-warn: #7a5a00; /* paused, uncertain */
+  --c-warn-soft: #f6ecc4;
+  --c-on-warn-soft: #5b4300;
+  --c-danger: #b0261d;
+  --c-danger-soft: #fadddb;
+  --c-on-danger-soft: #84140d;
+  --c-focus: #1f63c4;
+
+  --c-diff-add-bg: #dcf1e3;
+  --c-diff-add-text: #135a33;
+  --c-diff-remove-bg: #fbe2df;
+  --c-diff-remove-text: #8e1a12;
+
+  /* ---- sprite (placeholder art; replace with final art colours) ---- */
+  --sprite-body: #1c7c80;
+  --sprite-body-light: #62bab5;
+  --sprite-outline: #0d4e52;
+  --sprite-ink: #0a2b2d;
+  --sprite-muted-body: #8fa6a3;
+  --sprite-muted-outline: #5f7773;
+  --sprite-badge: #a65400;
+  --sprite-badge-ink: #ffffff;
+  --sprite-leaf: #4f9a58;
+  --sprite-glow: rgb(98 186 181 / 0.35);
+  --sprite-highlight: rgb(255 255 255 / 0.4);
+
+  /* ---- typography ---- */
+  --font-ui: 'Segoe UI Variable Text', 'Microsoft JhengHei UI', 'Microsoft JhengHei', 'PingFang TC',
+    'Noto Sans TC', 'Noto Sans CJK TC', system-ui, sans-serif;
+  --font-mono: 'Cascadia Mono', Consolas, 'Noto Sans Mono CJK TC', ui-monospace, monospace;
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-md: 14px;
+  --text-lg: 16px;
+  --text-xl: 20px;
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-bold: 700;
+  --leading-tight: 1.35;
+  --leading-body: 1.65;
+  --tracking-ui: 0.01em;
+
+  /* ---- spacing ---- */
+  --space-1: 2px;
+  --space-2: 4px;
+  --space-3: 8px;
+  --space-4: 12px;
+  --space-5: 16px;
+  --space-6: 20px;
+  --space-7: 24px;
+  --space-8: 32px;
+  --space-9: 48px;
+
+  /* ---- radius ---- */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-pill: 999px;
+
+  /* ---- sizes ---- */
+  --size-panel-width: 420px;
+  --size-settings-width: 760px;
+  --size-control: 34px;
+  --size-icon: 18px;
+  --size-sprite: 64px;
+  --size-sprite-header: 34px;
+  --size-dock-strip: 34px;
+  --border-width: 1px;
+  --border-width-strong: 2px;
+  --focus-ring-width: 2px;
+  --focus-ring-offset: 2px;
+
+  /* ---- shadow ---- */
+  --shadow-sm: 0 1px 2px rgb(14 38 34 / 0.1);
+  --shadow-md: 0 4px 14px rgb(14 38 34 / 0.14);
+  --shadow-float: 0 8px 24px rgb(14 38 34 / 0.24);
+  --shadow-sprite: 0 3px 6px rgb(14 38 34 / 0.28);
+
+  /* ---- motion ---- */
+  --motion-fast: 120ms;
+  --motion-base: 200ms;
+  --motion-slow: 360ms;
+  --motion-ease: cubic-bezier(0.2, 0, 0, 1);
+  --motion-sprite-idle: 3.6s;
+  --motion-sprite-listen: 1.4s;
+  --motion-sprite-work: 2.2s;
+  --motion-sprite-attn: 2.8s;
+  --motion-sprite-suggest: 3.2s;
+  --motion-caret: 1s;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+    --c-bg: #0e1514;
+    --c-surface: #162120;
+    --c-surface-2: #1b2928;
+    --c-sunken: #0a1110;
+    --c-border: #2b3c3a;
+    --c-border-strong: #5a706b;
+    --c-scrim: rgb(0 0 0 / 0.55);
+    --c-desktop-preview: #263238;
+
+    --c-text: #e4eeeb;
+    --c-text-2: #b0c2bd;
+    --c-text-3: #93a79f;
+    --c-text-disabled: #5f716d;
+
+    --c-primary: #55bdb8;
+    --c-primary-hover: #7bd0cb;
+    --c-on-primary: #04201f;
+    --c-primary-soft: #17393a;
+    --c-on-primary-soft: #9ae0db;
+
+    --c-attn: #f0a24a;
+    --c-attn-soft: #3a2a12;
+    --c-on-attn-soft: #ffcf8f;
+    --c-success: #6bcb8d;
+    --c-success-soft: #14301f;
+    --c-on-success-soft: #9fe3b8;
+    --c-warn: #e2c14d;
+    --c-warn-soft: #33290b;
+    --c-on-warn-soft: #f0d77d;
+    --c-danger: #ff8f86;
+    --c-danger-soft: #3d1b19;
+    --c-on-danger-soft: #ffb3ac;
+    --c-focus: #8ab8ff;
+
+    --c-diff-add-bg: #12301f;
+    --c-diff-add-text: #9fe3b8;
+    --c-diff-remove-bg: #3a1a18;
+    --c-diff-remove-text: #ffb3ac;
+
+    --sprite-body: #3fa8a3;
+    --sprite-body-light: #8ee0da;
+    --sprite-outline: #a5ece6;
+    --sprite-ink: #05201f;
+    --sprite-muted-body: #4d605c;
+    --sprite-muted-outline: #8ea39e;
+    --sprite-badge: #f0a24a;
+    --sprite-badge-ink: #2a1800;
+    --sprite-leaf: #7cc486;
+    --sprite-glow: rgb(142 224 218 / 0.3);
+    --sprite-highlight: rgb(255 255 255 / 0.22);
+
+    --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.5);
+    --shadow-md: 0 4px 14px rgb(0 0 0 / 0.5);
+    --shadow-float: 0 8px 24px rgb(0 0 0 / 0.6);
+    --shadow-sprite: 0 3px 6px rgb(0 0 0 / 0.6);
+  }
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --c-bg: #0e1514;
+  --c-surface: #162120;
+  --c-surface-2: #1b2928;
+  --c-sunken: #0a1110;
+  --c-border: #2b3c3a;
+  --c-border-strong: #5a706b;
+  --c-scrim: rgb(0 0 0 / 0.55);
+  --c-desktop-preview: #263238;
+
+  --c-text: #e4eeeb;
+  --c-text-2: #b0c2bd;
+  --c-text-3: #93a79f;
+  --c-text-disabled: #5f716d;
+
+  --c-primary: #55bdb8;
+  --c-primary-hover: #7bd0cb;
+  --c-on-primary: #04201f;
+  --c-primary-soft: #17393a;
+  --c-on-primary-soft: #9ae0db;
+
+  --c-attn: #f0a24a;
+  --c-attn-soft: #3a2a12;
+  --c-on-attn-soft: #ffcf8f;
+  --c-success: #6bcb8d;
+  --c-success-soft: #14301f;
+  --c-on-success-soft: #9fe3b8;
+  --c-warn: #e2c14d;
+  --c-warn-soft: #33290b;
+  --c-on-warn-soft: #f0d77d;
+  --c-danger: #ff8f86;
+  --c-danger-soft: #3d1b19;
+  --c-on-danger-soft: #ffb3ac;
+  --c-focus: #8ab8ff;
+
+  --c-diff-add-bg: #12301f;
+  --c-diff-add-text: #9fe3b8;
+  --c-diff-remove-bg: #3a1a18;
+  --c-diff-remove-text: #ffb3ac;
+
+  --sprite-body: #3fa8a3;
+  --sprite-body-light: #8ee0da;
+  --sprite-outline: #a5ece6;
+  --sprite-ink: #05201f;
+  --sprite-muted-body: #4d605c;
+  --sprite-muted-outline: #8ea39e;
+  --sprite-badge: #f0a24a;
+  --sprite-badge-ink: #2a1800;
+  --sprite-leaf: #7cc486;
+  --sprite-glow: rgb(142 224 218 / 0.3);
+  --sprite-highlight: rgb(255 255 255 / 0.22);
+
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.5);
+  --shadow-md: 0 4px 14px rgb(0 0 0 / 0.5);
+  --shadow-float: 0 8px 24px rgb(0 0 0 / 0.6);
+  --shadow-sprite: 0 3px 6px rgb(0 0 0 / 0.6);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-fast: 0.01ms;
+    --motion-base: 0.01ms;
+    --motion-slow: 0.01ms;
+    --sprite-play: paused; /* shapes still differ per state; only movement stops */
+  }
+}
+:root {
+  --sprite-play: running;
+}
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --sprite-play: paused;
+  }
+}
