@@ -1,0 +1,31 @@
+:root {
+  --elf-canvas: #F4F5F1;
+  --elf-surface: #FFFFFF;
+  --elf-subtle: #EAF0E8;
+  --elf-text: #202B25;
+  --elf-muted: #536359;
+  --elf-primary: #365D46;
+  --elf-on-primary: #FFFFFF;
+  --elf-secondary: #455B78;
+  --elf-success: #286044;
+  --elf-warning: #805116;
+  --elf-error: #A33036;
+  --elf-border: #C6D0C5;
+  --elf-focus: #526CC2;
+}
+[data-theme="dark"] {
+  --elf-canvas: #151C18;
+  --elf-surface: #202A23;
+  --elf-subtle: #2B382E;
+  --elf-text: #F1F4ED;
+  --elf-muted: #B4C2B6;
+  --elf-primary: #B7D3AC;
+  --elf-on-primary: #172319;
+  --elf-secondary: #B9CCE7;
+  --elf-success: #A6D5AF;
+  --elf-warning: #E6C38E;
+  --elf-error: #FFB5B5;
+  --elf-border: #59685B;
+  --elf-focus: #BCD0FF;
+}
+:root { --elf-space-1:4px; --elf-space-2:8px; --elf-space-3:12px; --elf-space-4:16px; --elf-space-6:24px; --elf-space-8:32px; --elf-radius-control:10px; --elf-radius-card:16px; --elf-radius-panel:24px; --elf-panel-width:440px; --elf-target:44px; }
