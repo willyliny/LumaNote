@@ -1,0 +1,50 @@
+{
+  "id": "night-letter",
+  "canvas": 384,
+  "layers": [
+    {
+      "id": "shadow",
+      "file": "shadow",
+      "role": "shadow"
+    },
+    {
+      "id": "glow",
+      "file": "glow",
+      "role": "glow"
+    },
+    {
+      "id": "body-back",
+      "file": "body-back",
+      "role": "body"
+    },
+    {
+      "id": "body",
+      "file": "body",
+      "role": "body"
+    },
+    {
+      "id": "highlight",
+      "file": "highlight",
+      "role": "highlight"
+    },
+    {
+      "id": "eyes-open",
+      "file": "eyes-open",
+      "role": "eyes-open"
+    },
+    {
+      "id": "eyes-closed",
+      "file": "eyes-closed",
+      "role": "eyes-closed"
+    },
+    {
+      "id": "pen",
+      "file": "pen",
+      "role": "accessory"
+    }
+  ],
+  "pivot": {
+    "x": 0.5,
+    "y": 0.62
+  }
+}
