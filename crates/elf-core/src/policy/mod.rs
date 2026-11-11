@@ -181,7 +181,7 @@ fn write_in_task_scope(task: &Task, real: Option<&PathBuf>) -> bool {
         .flatten()
         .filter_map(|v| v.as_str())
         .filter_map(|d| std::fs::canonicalize(d).ok())
-        .any(|d| real.starts_with(d))
+        .any(|d| paths::path_within(real, &d))
 }
 
 fn scope_match(grant: &Grant, resource: &Resource, real: Option<&PathBuf>) -> PathMatch {

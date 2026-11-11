@@ -107,6 +107,14 @@ id_type!(
     /// Provider-assigned (or locally assigned) identifier of a tool call.
     ToolCallId
 );
+id_type!(
+    /// Identifier of a pending or resolved approval request.
+    ApprovalId
+);
+id_type!(
+    /// Identifier of a local todo item.
+    TodoId
+);
 
 /// Defines a string-backed enum with `as_str`, `parse` and `Display`.
 macro_rules! str_enum {

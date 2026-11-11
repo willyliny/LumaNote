@@ -119,6 +119,15 @@ impl Store {
         self.get_grant(&id)
     }
 
+    /// Whether any grant for `action` is active at `now`, without consuming a use.
+    /// Used to decide which tools to offer a task; the real check is still
+    /// [`crate::policy::evaluate`] at execution time.
+    pub fn has_active_grant_for_action(&self, action: &str, now: Timestamp) -> Result<bool> {
+        Ok(grants_for_action(&self.conn, action)?
+            .iter()
+            .any(|g| g.is_active(now)))
+    }
+
     /// Loads a grant.
     pub fn get_grant(&self, id: &GrantId) -> Result<Grant> {
         self.conn

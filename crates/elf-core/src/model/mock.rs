@@ -71,14 +71,27 @@ impl From<ScriptStep> for ScriptItem {
 /// Adapter that replays a script through the same assembly rules a real adapter must follow.
 pub struct MockAdapter {
     clock: Arc<dyn Clock>,
-    script: Vec<ScriptItem>,
+    /// One script per `stream` call. With `replay` the single script is reused every time.
+    turns: Vec<Vec<ScriptItem>>,
+    replay: bool,
+    next_turn: Arc<Mutex<usize>>,
     capabilities: ModelCapabilities,
     requests: Arc<Mutex<Vec<ModelRequest>>>,
 }
 
 impl MockAdapter {
-    /// Creates a mock replaying `script`, with every capability marked supported.
+    /// Creates a mock replaying `script` on every `stream` call, with every capability
+    /// marked supported.
     pub fn new(clock: Arc<dyn Clock>, script: Vec<ScriptItem>) -> Self {
+        let mut mock = Self::with_turns(clock, vec![script]);
+        mock.replay = true;
+        mock
+    }
+
+    /// Creates a mock for multi-turn conversations: the n-th `stream` call plays the n-th
+    /// script (a tool-calling turn, then the answer after the tool results, ...). Once the
+    /// scripts run out the stream fails with a non-retryable error.
+    pub fn with_turns(clock: Arc<dyn Clock>, turns: Vec<Vec<ScriptItem>>) -> Self {
         let mut capabilities = ModelCapabilities::unverified();
         capabilities.text = Support::Supported;
         capabilities.streaming = Support::Supported;
@@ -86,7 +99,9 @@ impl MockAdapter {
         capabilities.structured_output = Support::Supported;
         Self {
             clock,
-            script,
+            turns,
+            replay: false,
+            next_turn: Arc::default(),
             capabilities,
             requests: Arc::default(),
         }
@@ -213,8 +228,22 @@ impl ModelAdapter for MockAdapter {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .push(request);
+        let turn = {
+            let mut n = self.next_turn.lock().unwrap_or_else(|e| e.into_inner());
+            let t = if self.replay { 0 } else { *n };
+            *n += 1;
+            t
+        };
+        let items: VecDeque<ScriptItem> = match self.turns.get(turn) {
+            Some(script) => script.iter().cloned().collect(),
+            None => VecDeque::from([ScriptStep::Fail(ElfError::ExternalFailure {
+                message: format!("mock script exhausted at stream call {}", turn + 1),
+                retryable: false,
+            })
+            .into()]),
+        };
         let state = State {
-            items: self.script.iter().cloned().collect(),
+            items,
             assembler: ToolCallAssembler::new(),
             seen_ids: HashSet::new(),
             tools,
@@ -284,6 +313,44 @@ mod tests {
         a.stream(request(), CancellationToken::new())
             .collect()
             .await
+    }
+
+    #[tokio::test]
+    async fn with_turns_plays_one_script_per_stream_call() {
+        let a = MockAdapter::with_turns(
+            Arc::new(FakeClock::at_default_start()),
+            vec![
+                vec![
+                    ScriptStep::Text("one".into()).into(),
+                    ScriptStep::Complete(FinishReason::Stop).into(),
+                ],
+                vec![
+                    ScriptStep::Text("two".into()).into(),
+                    ScriptStep::Complete(FinishReason::Stop).into(),
+                ],
+            ],
+        );
+        let texts = |evs: &[ModelEvent]| {
+            evs.iter()
+                .filter_map(|e| match e {
+                    ModelEvent::TextDelta { text } => Some(text.clone()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(texts(&collect(&a).await), vec!["one"]);
+        assert_eq!(texts(&collect(&a).await), vec!["two"]);
+        let evs = collect(&a).await;
+        assert!(matches!(
+            evs.last(),
+            Some(ModelEvent::Failed {
+                error: ElfError::ExternalFailure {
+                    retryable: false,
+                    ..
+                }
+            })
+        ));
+        assert_eq!(a.recorded_requests().len(), 3);
     }
 
     #[tokio::test]

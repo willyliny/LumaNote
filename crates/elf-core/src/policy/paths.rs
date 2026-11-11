@@ -1,10 +1,98 @@
 //! Path-scope checking: absolute paths only, no `..`, symlinks resolved.
+//!
+//! Windows specifics (the product ships on Windows only): `fs::canonicalize` returns
+//! `\\?\` verbatim paths there, which must still compare equal to the same location
+//! written the ordinary way, and file systems are case-insensitive. Both are handled by
+//! [`path_within`] / [`strip_verbatim_prefix`]; the pure string logic is platform
+//! independent (so Linux CI tests it), only the choice of case rule uses `cfg!(windows)`.
 
 use std::ffi::OsString;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
 use crate::schema::{ElfError, Result};
+
+/// Removes a Windows verbatim prefix: `\\?\C:\x` becomes `C:\x` and `\\?\UNC\srv\share\x`
+/// becomes `\\srv\share\x`. Other paths are returned unchanged. Pure string logic.
+pub fn strip_verbatim_prefix(path: &Path) -> PathBuf {
+    let text = path.to_string_lossy();
+    if let Some(rest) = text.strip_prefix(r"\\?\UNC\") {
+        return PathBuf::from(format!(r"\\{rest}"));
+    }
+    if let Some(rest) = text.strip_prefix(r"\\?\") {
+        let b = rest.as_bytes();
+        if b.len() >= 2 && b[0].is_ascii_alphabetic() && b[1] == b':' {
+            return PathBuf::from(rest);
+        }
+    }
+    path.to_path_buf()
+}
+
+/// Like [`strip_verbatim_prefix`] but keeps the verbatim form for very long paths, where
+/// Windows needs it to open the file at all.
+pub fn display_path(path: &Path) -> PathBuf {
+    let stripped = strip_verbatim_prefix(path);
+    if stripped.as_os_str().len() >= 240 {
+        path.to_path_buf()
+    } else {
+        stripped
+    }
+}
+
+/// Splits a path into its components, keeping the original spelling. With `windows` set,
+/// both `/` and `\` separate components and the verbatim prefix is ignored. A leading
+/// separator yields an empty first component (the root).
+fn path_parts(path: &Path, windows: bool) -> Vec<String> {
+    let stripped = strip_verbatim_prefix(path);
+    let text = stripped.to_string_lossy().into_owned();
+    let is_sep = |c: char| c == '/' || (windows && c == '\\');
+    let mut parts: Vec<String> = Vec::new();
+    if text.starts_with(is_sep) {
+        parts.push(String::new());
+    }
+    parts.extend(
+        text.split(is_sep)
+            .filter(|p| !p.is_empty() && *p != ".")
+            .map(str::to_owned),
+    );
+    parts
+}
+
+/// Comparison keys of [`path_parts`]: lower-cased on Windows.
+fn path_keys(path: &Path, windows: bool) -> Vec<String> {
+    path_parts(path, windows)
+        .into_iter()
+        .map(|p| if windows { p.to_lowercase() } else { p })
+        .collect()
+}
+
+/// The components of `path` below `prefix` in their original spelling, or `None` if
+/// `path` is not inside `prefix` (see [`path_within`] for the comparison rules).
+pub fn relative_below(path: &Path, prefix: &Path) -> Option<Vec<String>> {
+    relative_below_with(path, prefix, cfg!(windows))
+}
+
+/// [`relative_below`] with explicit platform rules.
+pub fn relative_below_with(path: &Path, prefix: &Path, windows: bool) -> Option<Vec<String>> {
+    if !path_within_with(path, prefix, windows) {
+        return None;
+    }
+    let skip = path_parts(prefix, windows).len();
+    Some(path_parts(path, windows).into_iter().skip(skip).collect())
+}
+
+/// Component-wise prefix test with explicit platform rules (see [`path_within`]).
+pub fn path_within_with(path: &Path, prefix: &Path, windows: bool) -> bool {
+    let (p, q) = (path_keys(path, windows), path_keys(prefix, windows));
+    p.len() >= q.len() && p.iter().zip(q.iter()).all(|(a, b)| a == b)
+}
+
+/// True if `path` is `prefix` or lies below it. On Windows the comparison ignores case,
+/// accepts both separators and treats `\\?\C:\x` the same as `C:\x`; elsewhere it behaves
+/// like [`Path::starts_with`].
+pub fn path_within(path: &Path, prefix: &Path) -> bool {
+    path_within_with(path, prefix, cfg!(windows))
+}
 
 /// How a target relates to a granted directory.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -59,9 +147,9 @@ pub fn classify(scope: &Path, raw: &Path, real: &Path) -> PathMatch {
     let Ok(scope_real) = fs::canonicalize(scope) else {
         return PathMatch::Outside;
     };
-    if real.starts_with(&scope_real) {
+    if path_within(real, &scope_real) {
         PathMatch::Inside
-    } else if raw.starts_with(scope) || raw.starts_with(&scope_real) {
+    } else if path_within(raw, scope) || path_within(raw, &scope_real) {
         PathMatch::Escape
     } else {
         PathMatch::Outside
@@ -86,6 +174,81 @@ pub fn resolve_within(scope: &Path, target: &Path) -> Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn verbatim_prefixes_are_stripped() {
+        let strip = |s: &str| {
+            strip_verbatim_prefix(Path::new(s))
+                .to_string_lossy()
+                .into_owned()
+        };
+        assert_eq!(strip(r"\\?\C:\Users\me\a.md"), r"C:\Users\me\a.md");
+        assert_eq!(strip(r"\\?\UNC\srv\share\a.md"), r"\\srv\share\a.md");
+        assert_eq!(strip(r"\\?\Volume{1234}\a"), r"\\?\Volume{1234}\a"); // not a drive path
+        assert_eq!(strip(r"C:\plain"), r"C:\plain");
+        assert_eq!(strip("/unix/path"), "/unix/path");
+        // very long paths keep the verbatim form for display
+        let long = format!(r"\\?\C:\{}", "d\\".repeat(130));
+        assert_eq!(display_path(Path::new(&long)), PathBuf::from(&long));
+        assert_eq!(display_path(Path::new(r"\\?\C:\a")), PathBuf::from(r"C:\a"));
+    }
+
+    #[test]
+    fn windows_prefix_comparison_ignores_case_separators_and_verbatim() {
+        let w = |p: &str, q: &str| path_within_with(Path::new(p), Path::new(q), true);
+        assert!(w(r"C:\Users\Me\Out\a.md", r"c:\users\me\out"));
+        assert!(w(r"\\?\C:\Users\Me\Out\a.md", r"C:\Users\Me\Out"));
+        assert!(w(r"C:\Users\Me\Out\a.md", r"\\?\c:\users\me\out"));
+        assert!(w(r"C:/Users/Me/Out/sub/a.md", r"C:\Users\Me\Out"));
+        assert!(w(r"C:\Users\Me\Out", r"C:\Users\Me\Out"));
+        assert!(w(r"C:\Users\Me\.\Out\a", r"C:\Users\Me\Out"));
+        // look-alikes and other drives are outside
+        assert!(!w(r"C:\Users\Me\Out-evil\a.md", r"C:\Users\Me\Out"));
+        assert!(!w(r"D:\Users\Me\Out\a.md", r"C:\Users\Me\Out"));
+        assert!(!w(r"C:\Users\Me", r"C:\Users\Me\Out"));
+        assert!(!w(r"\\srv\share\x", r"C:\x"));
+        // the same case difference is significant when case-sensitive rules apply
+        assert!(!path_within_with(Path::new("/A/b"), Path::new("/a"), false));
+        assert!(path_within_with(Path::new("/a/b"), Path::new("/a"), false));
+        assert!(!path_within_with(Path::new("/ab"), Path::new("/a"), false));
+    }
+
+    #[test]
+    fn relative_remainder_keeps_original_case() {
+        let r = |p: &str, q: &str| relative_below_with(Path::new(p), Path::new(q), true);
+        assert_eq!(
+            r(r"C:\Out\Sub\Note.md", r"c:\out"),
+            Some(vec!["Sub".to_owned(), "Note.md".to_owned()])
+        );
+        assert_eq!(r(r"C:\Out", r"C:\Out"), Some(vec![]));
+        assert_eq!(r(r"C:\Other\x", r"C:\Out"), None);
+        assert_eq!(
+            relative_below_with(Path::new("/o/a/B"), Path::new("/o"), false),
+            Some(vec!["a".to_owned(), "B".to_owned()])
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_canonical_paths_compare_with_user_spelling() {
+        let d = tempfile::tempdir().unwrap();
+        let canon = fs::canonicalize(d.path()).unwrap();
+        // canonicalize yields a \\?\ path on Windows; the user's spelling must still match
+        assert!(canon.to_string_lossy().starts_with(r"\\?\"));
+        let plain = strip_verbatim_prefix(&canon);
+        let upper = PathBuf::from(plain.to_string_lossy().to_uppercase());
+        assert!(path_within(&canon.join("x.md"), &plain));
+        assert!(path_within(&canon.join("x.md"), &upper));
+        assert!(path_within(&plain.join("x.md"), &canon));
+        assert_eq!(
+            classify(
+                &upper,
+                &plain.join("x.md"),
+                &resolve_target(&canon.join("x.md")).unwrap()
+            ),
+            PathMatch::Inside
+        );
+    }
 
     #[test]
     fn inside_nonexistent_and_prefix_lookalike() {

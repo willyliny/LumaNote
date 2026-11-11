@@ -6,7 +6,9 @@ use serde_json::{json, Value};
 
 use super::{conv, get_json, get_opt_ts, get_ts, to_json, Store};
 use crate::ports::Clock;
-use crate::schema::{ts_to_sql, ElfError, EvidenceRef, Result, StepId, TaskId, Timestamp, Trust};
+use crate::schema::{
+    ts_to_sql, ConversationId, ElfError, EvidenceRef, Result, StepId, TaskId, Timestamp, Trust,
+};
 use crate::task::{check_transition, SideEffect, StepStatus, TaskStatus};
 
 /// A task row.
@@ -28,6 +30,33 @@ pub struct Task {
     pub result_ref: Option<String>,
     /// Set once external (untrusted) content entered the task (handbook section 8).
     pub untrusted_content: bool,
+    /// Task this one follows up on (completed tasks are never reopened).
+    pub parent_task_id: Option<TaskId>,
+    /// Raw limits (`max_tool_calls`, `max_duration_secs`); see [`crate::task::TaskLimits`].
+    pub limits: Value,
+    /// Tool calls that produced a result so far (all budget windows together).
+    pub tool_call_count: u32,
+    /// Start of the current budget window (first run, or the latest resume).
+    pub started_at: Option<Timestamp>,
+    /// Conversation holding the task's messages.
+    pub conversation_id: Option<ConversationId>,
+    /// `tool_call_count` when the current budget window began.
+    pub tool_call_base: u32,
+}
+
+/// Parameters for [`Store::create_task_with`].
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct NewTask {
+    /// What the user asked for.
+    pub intent: String,
+    /// Scope declared at creation.
+    pub scope: Value,
+    /// Limits override (`{}` means the defaults of 20 tool calls and 10 minutes).
+    pub limits: Value,
+    /// Follow-up relationship.
+    pub parent_task_id: Option<TaskId>,
+    /// Conversation holding the task's messages.
+    pub conversation_id: Option<ConversationId>,
 }
 
 /// A task step row.
@@ -55,6 +84,8 @@ pub struct TaskStep {
     pub finished_at: Option<Timestamp>,
     /// Evidence reference produced by the step.
     pub evidence_ref: Option<String>,
+    /// The saved tool result (what the model was told); reused instead of re-running.
+    pub result: Option<Value>,
 }
 
 /// A task event row (source of frontend event sequence numbers).
@@ -109,8 +140,9 @@ pub struct RecoveredTask {
 }
 
 const TASK_COLS: &str =
-    "id, intent, status, scope_json, created_at, updated_at, result_ref, untrusted_content";
-const STEP_COLS: &str = "id, task_id, seq, tool, args_redacted, side_effect, status, idempotency_key, started_at, finished_at, evidence_ref";
+    "id, intent, status, scope_json, created_at, updated_at, result_ref, untrusted_content, \
+     parent_task_id, limits_json, tool_call_count, started_at, conversation_id, tool_call_base";
+const STEP_COLS: &str = "id, task_id, seq, tool, args_redacted, side_effect, status, idempotency_key, started_at, finished_at, evidence_ref, result_json";
 
 fn task_from_row(r: &Row<'_>) -> rusqlite::Result<Task> {
     let status: String = r.get(2)?;
@@ -123,6 +155,14 @@ fn task_from_row(r: &Row<'_>) -> rusqlite::Result<Task> {
         updated_at: get_ts(r, 5)?,
         result_ref: r.get(6)?,
         untrusted_content: r.get::<_, i64>(7)? != 0,
+        parent_task_id: r.get::<_, Option<String>>(8)?.map(TaskId::from_string),
+        limits: get_json(r, 9)?,
+        tool_call_count: u32::try_from(r.get::<_, i64>(10)?).unwrap_or(u32::MAX),
+        started_at: get_opt_ts(r, 11)?,
+        conversation_id: r
+            .get::<_, Option<String>>(12)?
+            .map(ConversationId::from_string),
+        tool_call_base: u32::try_from(r.get::<_, i64>(13)?).unwrap_or(u32::MAX),
     })
 }
 
@@ -141,6 +181,17 @@ fn step_from_row(r: &Row<'_>) -> rusqlite::Result<TaskStep> {
         started_at: get_ts(r, 8)?,
         finished_at: get_opt_ts(r, 9)?,
         evidence_ref: r.get(10)?,
+        result: r
+            .get::<_, Option<String>>(11)?
+            .map(|s| {
+                conv(
+                    11,
+                    serde_json::from_str(&s).map_err(|e| ElfError::Storage {
+                        message: format!("bad stored step result: {e}"),
+                    }),
+                )
+            })
+            .transpose()?,
     })
 }
 
@@ -257,9 +308,18 @@ fn apply_transition(
         check_evidence(conn, &task, evidence)?;
         result_ref = evidence.first().map(EvidenceRef::to_ref_string);
     }
+    // The first entry into `running` opens the first budget window.
+    let started = (to == TaskStatus::Running && task.started_at.is_none()).then(|| ts_to_sql(&now));
     conn.execute(
-        "UPDATE tasks SET status = ?2, updated_at = ?3, result_ref = COALESCE(?4, result_ref) WHERE id = ?1",
-        params![id.as_str(), to.as_str(), ts_to_sql(&now), result_ref],
+        "UPDATE tasks SET status = ?2, updated_at = ?3, result_ref = COALESCE(?4, result_ref),
+             started_at = COALESCE(?5, started_at) WHERE id = ?1",
+        params![
+            id.as_str(),
+            to.as_str(),
+            ts_to_sql(&now),
+            result_ref,
+            started
+        ],
     )?;
     let mut payload = json!({
         "from": task.status.as_str(),
@@ -276,15 +336,45 @@ fn apply_transition(
 impl Store {
     /// Creates a queued task and its first event (`created`, sequence 1).
     pub fn create_task(&mut self, intent: &str, scope: &Value, now: Timestamp) -> Result<Task> {
+        self.create_task_with(
+            &NewTask {
+                intent: intent.to_owned(),
+                scope: scope.clone(),
+                limits: json!({}),
+                ..NewTask::default()
+            },
+            now,
+        )
+    }
+
+    /// Like [`Store::create_task`] with limits, a parent task and a conversation.
+    pub fn create_task_with(&mut self, new: &NewTask, now: Timestamp) -> Result<Task> {
         let id = TaskId::new();
         let ts = ts_to_sql(&now);
+        let limits = if new.limits.is_null() {
+            json!({})
+        } else {
+            new.limits.clone()
+        };
         let tx = self
             .conn
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        if let Some(parent) = &new.parent_task_id {
+            load_task(&tx, parent)?;
+        }
         tx.execute(
-            "INSERT INTO tasks (id, intent, status, scope_json, created_at, updated_at)
-             VALUES (?1, ?2, 'queued', ?3, ?4, ?4)",
-            params![id.as_str(), intent, to_json(scope)?, ts],
+            "INSERT INTO tasks (id, intent, status, scope_json, created_at, updated_at,
+                                limits_json, parent_task_id, conversation_id)
+             VALUES (?1, ?2, 'queued', ?3, ?4, ?4, ?5, ?6, ?7)",
+            params![
+                id.as_str(),
+                new.intent,
+                to_json(&new.scope)?,
+                ts,
+                to_json(&limits)?,
+                new.parent_task_id.as_ref().map(TaskId::as_str),
+                new.conversation_id.as_ref().map(ConversationId::as_str)
+            ],
         )?;
         insert_event(&tx, &id, "created", &json!({"status": "queued"}), now)?;
         tx.commit()?;
@@ -443,6 +533,19 @@ impl Store {
         evidence: Option<&EvidenceRef>,
         now: Timestamp,
     ) -> Result<TaskStep> {
+        self.finish_step_with_result(step_id, outcome, evidence, None, now)
+    }
+
+    /// Like [`Store::finish_step`], also saving the tool result in the same transaction
+    /// so a later resume can return it without executing the step again.
+    pub fn finish_step_with_result(
+        &mut self,
+        step_id: &StepId,
+        outcome: StepOutcome,
+        evidence: Option<&EvidenceRef>,
+        result: Option<&Value>,
+        now: Timestamp,
+    ) -> Result<TaskStep> {
         let tx = self
             .conn
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -462,16 +565,97 @@ impl Store {
             });
         }
         tx.execute(
-            "UPDATE task_steps SET status = ?2, finished_at = ?3, evidence_ref = ?4 WHERE id = ?1",
+            "UPDATE task_steps SET status = ?2, finished_at = ?3, evidence_ref = ?4, result_json = ?5 WHERE id = ?1",
             params![
                 step_id.as_str(),
                 outcome.status().as_str(),
                 ts_to_sql(&now),
-                evidence.map(EvidenceRef::to_ref_string)
+                evidence.map(EvidenceRef::to_ref_string),
+                result.map(to_json).transpose()?
             ],
         )?;
         tx.commit()?;
         self.get_step(step_id)
+    }
+
+    /// Re-opens a `failed` or `interrupted` step that is not an external write so the
+    /// same idempotency key can be executed again (write-ahead: back to `started`).
+    /// Succeeded steps are never re-opened and external writes are never re-run.
+    pub fn reopen_step(&mut self, step_id: &StepId, now: Timestamp) -> Result<TaskStep> {
+        let step = self.get_step(step_id)?;
+        let allowed = matches!(step.status, StepStatus::Failed | StepStatus::Interrupted)
+            && step.side_effect != SideEffect::ExternalWrite;
+        if !allowed {
+            return Err(ElfError::InvalidTransition {
+                from: step.status.to_string(),
+                to: StepStatus::Started.to_string(),
+                reason: Some("only failed or interrupted non-external steps can be re-run".into()),
+            });
+        }
+        self.conn.execute(
+            "UPDATE task_steps SET status = 'started', started_at = ?2, finished_at = NULL,
+                 evidence_ref = NULL, result_json = NULL WHERE id = ?1",
+            params![step_id.as_str(), ts_to_sql(&now)],
+        )?;
+        self.get_step(step_id)
+    }
+
+    /// Appends a custom event (e.g. `tool_started`) to the task's event log and
+    /// returns it; its `sequence` continues the per-task numbering.
+    pub fn append_task_event(
+        &mut self,
+        task_id: &TaskId,
+        event_type: &str,
+        payload: &Value,
+        now: Timestamp,
+    ) -> Result<TaskEvent> {
+        let tx = self
+            .conn
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        load_task(&tx, task_id)?;
+        let ev = insert_event(&tx, task_id, event_type, payload, now)?;
+        tx.commit()?;
+        Ok(ev)
+    }
+
+    /// Counts one tool call that produced a result; returns the new total.
+    pub fn increment_tool_calls(&mut self, id: &TaskId, now: Timestamp) -> Result<u32> {
+        let n = self.conn.execute(
+            "UPDATE tasks SET tool_call_count = tool_call_count + 1, updated_at = ?2 WHERE id = ?1",
+            params![id.as_str(), ts_to_sql(&now)],
+        )?;
+        if n == 0 {
+            return Err(ElfError::invalid_input(format!("unknown task {id}")));
+        }
+        Ok(self.get_task(id)?.tool_call_count)
+    }
+
+    /// Opens a fresh budget window: the time limit counts from `now` and the tool-call
+    /// limit counts from the calls made so far. Used when a paused task is resumed.
+    pub fn begin_budget_window(&mut self, id: &TaskId, now: Timestamp) -> Result<()> {
+        let n = self.conn.execute(
+            "UPDATE tasks SET started_at = ?2, tool_call_base = tool_call_count WHERE id = ?1",
+            params![id.as_str(), ts_to_sql(&now)],
+        )?;
+        if n == 0 {
+            return Err(ElfError::invalid_input(format!("unknown task {id}")));
+        }
+        Ok(())
+    }
+
+    /// Moves the budget window start forward, so time spent waiting for the user does
+    /// not count against the task's time limit.
+    pub fn shift_budget_window(&mut self, id: &TaskId, by: std::time::Duration) -> Result<()> {
+        let task = self.get_task(id)?;
+        let (Some(start), Ok(by)) = (task.started_at, chrono::Duration::from_std(by)) else {
+            return Ok(());
+        };
+        let shifted = start.checked_add_signed(by).unwrap_or(start);
+        self.conn.execute(
+            "UPDATE tasks SET started_at = ?2 WHERE id = ?1",
+            params![id.as_str(), ts_to_sql(&shifted)],
+        )?;
+        Ok(())
     }
 
     /// Loads a step.

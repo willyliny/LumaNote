@@ -58,6 +58,55 @@ str_enum!(
     }
 );
 
+/// Per-task execution limits (handbook 7.5: 20 tool calls and 10 minutes by default),
+/// read from `tasks.limits_json`. Exceeding one pauses the task; it never fails it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TaskLimits {
+    /// Tool calls allowed per budget window.
+    pub max_tool_calls: u32,
+    /// Seconds allowed per budget window (measured on the injected clock).
+    pub max_duration_secs: u64,
+}
+
+impl Default for TaskLimits {
+    fn default() -> Self {
+        Self {
+            max_tool_calls: 20,
+            max_duration_secs: 600,
+        }
+    }
+}
+
+impl TaskLimits {
+    /// Parses `limits_json`; missing keys keep their default, wrongly typed or zero values
+    /// are rejected so a typo cannot silently disable a limit.
+    pub fn from_json(v: &serde_json::Value) -> Result<Self> {
+        let mut out = Self::default();
+        let Some(obj) = v.as_object() else {
+            return if v.is_null() {
+                Ok(out)
+            } else {
+                Err(ElfError::invalid_input("limits must be a JSON object"))
+            };
+        };
+        if let Some(n) = obj.get("max_tool_calls") {
+            out.max_tool_calls = n
+                .as_u64()
+                .and_then(|n| u32::try_from(n).ok())
+                .filter(|n| *n > 0)
+                .ok_or_else(|| {
+                    ElfError::invalid_input("max_tool_calls must be a positive integer")
+                })?;
+        }
+        if let Some(n) = obj.get("max_duration_secs") {
+            out.max_duration_secs = n.as_u64().filter(|n| *n > 0).ok_or_else(|| {
+                ElfError::invalid_input("max_duration_secs must be a positive integer")
+            })?;
+        }
+        Ok(out)
+    }
+}
+
 use TaskStatus::*;
 
 impl TaskStatus {
@@ -75,7 +124,7 @@ impl TaskStatus {
             ],
             AwaitingUser => &[Running, Cancelled],
             Paused => &[Running, Cancelled],
-            Verifying => &[Completed, Running, Failed],
+            Verifying => &[Completed, Running, Paused, Failed, Cancelled],
             Uncertain => &[Completed, Failed, Cancelled],
             Completed | Failed | Cancelled => &[],
         }
@@ -125,7 +174,9 @@ mod tests {
         (Paused, Cancelled),
         (Verifying, Completed),
         (Verifying, Running),
+        (Verifying, Paused),
         (Verifying, Failed),
+        (Verifying, Cancelled),
         (Uncertain, Completed),
         (Uncertain, Failed),
         (Uncertain, Cancelled),
@@ -150,7 +201,28 @@ mod tests {
                 }
             }
         }
-        assert_eq!((legal, illegal), (18, 63));
+        assert_eq!((legal, illegal), (20, 61));
+    }
+
+    #[test]
+    fn limits_default_and_validation() {
+        use serde_json::json;
+        assert_eq!(
+            TaskLimits::from_json(&json!({})).unwrap(),
+            TaskLimits::default()
+        );
+        assert_eq!(TaskLimits::default().max_tool_calls, 20);
+        assert_eq!(TaskLimits::default().max_duration_secs, 600);
+        let l = TaskLimits::from_json(&json!({"max_tool_calls": 3})).unwrap();
+        assert_eq!((l.max_tool_calls, l.max_duration_secs), (3, 600));
+        for bad in [
+            json!({"max_tool_calls": 0}),
+            json!({"max_tool_calls": "3"}),
+            json!({"max_duration_secs": -1}),
+            json!([1]),
+        ] {
+            assert!(TaskLimits::from_json(&bad).is_err(), "{bad}");
+        }
     }
 
     #[test]

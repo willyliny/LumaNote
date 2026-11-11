@@ -17,11 +17,18 @@ pub struct Migration {
 }
 
 /// All migrations shipped with this build, in order.
-pub const MIGRATIONS: &[Migration] = &[Migration {
-    version: 1,
-    name: "init",
-    sql: include_str!("../../migrations/0001_init.sql"),
-}];
+pub const MIGRATIONS: &[Migration] = &[
+    Migration {
+        version: 1,
+        name: "init",
+        sql: include_str!("../../migrations/0001_init.sql"),
+    },
+    Migration {
+        version: 2,
+        name: "agent",
+        sql: include_str!("../../migrations/0002_agent.sql"),
+    },
+];
 
 fn table_exists(conn: &Connection, name: &str) -> Result<bool> {
     let found: Option<i64> = conn

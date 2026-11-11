@@ -9,9 +9,12 @@
 #![deny(clippy::unwrap_used, clippy::expect_used)]
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
 
+pub mod agent;
 pub mod model;
 pub mod policy;
 pub mod ports;
+pub mod scheduler;
 pub mod schema;
 pub mod storage;
 pub mod task;
+pub mod tools;

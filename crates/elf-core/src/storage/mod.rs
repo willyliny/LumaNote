@@ -12,18 +12,44 @@ use serde_json::Value;
 use crate::ports::Clock;
 use crate::schema::{ts_from_sql, ts_to_sql, ElfError, Result, Timestamp};
 
+pub mod approvals;
 mod content;
 pub mod grants;
 pub mod migrate;
+pub mod schedules;
 pub mod tasks;
+pub mod todos;
 
 #[cfg(test)]
 mod tests;
 
+pub use approvals::{Approval, ApprovalStatus, NewApproval};
 pub use content::{Artifact, Conversation, StoredMessage};
 pub use grants::{Grant, NewGrant};
 pub use migrate::{Migration, MIGRATIONS};
-pub use tasks::{RecoveredTask, StepOutcome, Task, TaskEvent, TaskStep};
+pub use tasks::{NewTask, RecoveredTask, StepOutcome, Task, TaskEvent, TaskStep};
+pub use todos::{NewTodo, Todo, TodoStatus};
+
+/// A [`Store`] shared between the orchestrator and the tools it runs.
+///
+/// SQLite access is short and synchronous, so a plain mutex is used; the lock is never
+/// held across an `.await` (callers pass a closure to [`SharedStore::with`]).
+#[derive(Debug, Clone)]
+pub struct SharedStore(std::sync::Arc<std::sync::Mutex<Store>>);
+
+impl SharedStore {
+    /// Wraps a store for sharing.
+    pub fn new(store: Store) -> Self {
+        Self(std::sync::Arc::new(std::sync::Mutex::new(store)))
+    }
+
+    /// Runs `f` with exclusive access to the store.
+    pub fn with<R>(&self, f: impl FnOnce(&mut Store) -> Result<R>) -> Result<R> {
+        // A panic inside another closure must not wedge the database for good.
+        let mut guard = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        f(&mut guard)
+    }
+}
 
 /// Handle to the application database (one connection).
 #[derive(Debug)]

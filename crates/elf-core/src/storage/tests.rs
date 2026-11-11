@@ -10,6 +10,10 @@ use crate::ports::Clock;
 use crate::schema::{EvidenceRef, StepId, TaskId, ToolCallId, Trust};
 use crate::task::{SideEffect, StepStatus, TaskStatus};
 
+fn latest_version() -> u32 {
+    MIGRATIONS.last().map(|m| m.version).unwrap_or(0)
+}
+
 fn mem() -> (Store, FakeClock) {
     let clock = FakeClock::at_default_start();
     (Store::open_in_memory(&clock).unwrap(), clock)
@@ -61,7 +65,7 @@ fn task_in(s: &mut Store, c: &FakeClock, target: TaskStatus) -> Task {
 #[test]
 fn migrations_create_every_handbook_table() {
     let (s, _) = mem();
-    assert_eq!(s.schema_version().unwrap(), 1);
+    assert_eq!(s.schema_version().unwrap(), latest_version());
     assert!(s.foreign_keys_enabled().unwrap());
     let names = table_names(&s);
     for t in [
@@ -110,12 +114,12 @@ fn file_database_uses_wal_and_migrating_twice_is_idempotent() {
     assert!(applied.is_empty());
     drop(conn);
     let s = Store::open(&path, &clock).unwrap();
-    assert_eq!(s.schema_version().unwrap(), 1);
+    assert_eq!(s.schema_version().unwrap(), latest_version());
     let versions: i64 = s
         .conn
         .query_row("SELECT COUNT(*) FROM schema_version", [], |r| r.get(0))
         .unwrap();
-    assert_eq!(versions, 1);
+    assert_eq!(versions, MIGRATIONS.len() as i64);
     assert_eq!(s.get_task(&task_id).unwrap().intent, "keep me");
 }
 
@@ -126,20 +130,20 @@ fn failed_migration_rolls_back_and_leaves_database_unchanged() {
     let clock = FakeClock::at_default_start();
     drop(Store::open(&path, &clock).unwrap());
 
-    let bad = [
-        MIGRATIONS[0],
-        Migration {
-            version: 2,
-            name: "bad",
-            sql: "CREATE TABLE half_done (x INTEGER); INSERT INTO tasks (id) VALUES ('x'); CREATE TABLE never (y);",
-        },
-    ];
+    let mut bad = MIGRATIONS.to_vec();
+    bad.push(Migration {
+        version: latest_version() + 1,
+        name: "bad",
+        sql: "CREATE TABLE half_done (x INTEGER); INSERT INTO tasks (id) VALUES ('x'); CREATE TABLE never (y);",
+    });
     let err = Store::open_with(&path, &clock, &bad).unwrap_err();
     assert!(matches!(err, ElfError::Storage { .. }));
-    assert!(err.to_string().contains("migration 2"));
+    assert!(err
+        .to_string()
+        .contains(&format!("migration {}", latest_version() + 1)));
 
     let s = Store::open(&path, &clock).unwrap();
-    assert_eq!(s.schema_version().unwrap(), 1);
+    assert_eq!(s.schema_version().unwrap(), latest_version());
     assert!(!table_names(&s).contains("half_done"));
     assert!(!table_names(&s).contains("never"));
 
@@ -167,16 +171,14 @@ fn newer_database_and_unordered_migrations_are_refused() {
     let clock = FakeClock::at_default_start();
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("elf.db");
-    let two = [
-        MIGRATIONS[0],
-        Migration {
-            version: 2,
-            name: "more",
-            sql: "CREATE TABLE extra (x);",
-        },
-    ];
+    let mut two = MIGRATIONS.to_vec();
+    two.push(Migration {
+        version: latest_version() + 1,
+        name: "more",
+        sql: "CREATE TABLE extra (x);",
+    });
     drop(Store::open_with(&path, &clock, &two).unwrap());
-    assert!(Store::open(&path, &clock).is_err()); // build only knows version 1
+    assert!(Store::open(&path, &clock).is_err()); // build only knows the shipped versions
     let unordered = [two[1], two[0]];
     assert!(Store::open_with(&dir.path().join("o.db"), &clock, &unordered).is_err());
 }
@@ -259,7 +261,7 @@ fn every_transition_pair_against_the_database() {
             }
         }
     }
-    assert_eq!((legal, illegal), (18, 63));
+    assert_eq!((legal, illegal), (20, 61));
 }
 
 #[test]
@@ -661,4 +663,220 @@ fn grants_round_trip_and_revocation_is_idempotent() {
     assert!(s
         .revoke_grant(&crate::schema::GrantId::new(), c.now_utc())
         .is_err());
+}
+
+#[test]
+fn upgrade_from_version_one_keeps_data_and_adds_task_columns() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("elf.db");
+    let clock = FakeClock::at_default_start();
+    let id;
+    {
+        let s = Store::open_with(&path, &clock, &MIGRATIONS[..1]).unwrap();
+        assert_eq!(s.schema_version().unwrap(), 1);
+        id = TaskId::new();
+        s.conn
+            .execute(
+                "INSERT INTO tasks (id, intent, status, created_at, updated_at) VALUES (?1, 'old', 'paused', 't', 't')",
+                [id.as_str()],
+            )
+            .unwrap();
+    }
+    // created_at 't' is not a timestamp, so check the new columns with raw SQL.
+    let s = Store::open(&path, &clock).unwrap();
+    assert_eq!(s.schema_version().unwrap(), latest_version());
+    let (limits, count, started, parent, base): (String, i64, Option<String>, Option<String>, i64) = s
+        .conn
+        .query_row(
+            "SELECT limits_json, tool_call_count, started_at, parent_task_id, tool_call_base FROM tasks WHERE id = ?1",
+            [id.as_str()],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+        )
+        .unwrap();
+    assert_eq!(
+        (limits.as_str(), count, started, parent, base),
+        ("{}", 0, None, None, 0)
+    );
+    let names = table_names(&s);
+    for t in ["todos", "approvals"] {
+        assert!(names.contains(t), "missing {t}");
+    }
+}
+
+#[test]
+fn new_task_columns_round_trip_and_started_at_is_set_on_first_run() {
+    let (mut s, c) = mem();
+    let conv = s.create_conversation("c", c.now_utc()).unwrap();
+    let parent = s.create_task("first", &json!({}), c.now_utc()).unwrap();
+    let t = s
+        .create_task_with(
+            &NewTask {
+                intent: "follow up".into(),
+                scope: json!({"output_dirs": ["/o"]}),
+                limits: json!({"max_tool_calls": 5}),
+                parent_task_id: Some(parent.id.clone()),
+                conversation_id: Some(conv.id.clone()),
+            },
+            c.now_utc(),
+        )
+        .unwrap();
+    assert_eq!(t.parent_task_id.as_ref(), Some(&parent.id));
+    assert_eq!(t.limits, json!({"max_tool_calls": 5}));
+    assert_eq!(t.conversation_id.as_ref(), Some(&conv.id));
+    assert_eq!((t.tool_call_count, t.started_at), (0, None));
+    assert!(s
+        .create_task_with(
+            &NewTask {
+                intent: "x".into(),
+                parent_task_id: Some(TaskId::from_string("missing")),
+                ..NewTask::default()
+            },
+            c.now_utc()
+        )
+        .is_err());
+
+    let t0 = c.now_utc();
+    s.transition_task(&t.id, TaskStatus::Running, &[], None, &c)
+        .unwrap();
+    assert_eq!(s.get_task(&t.id).unwrap().started_at, Some(t0));
+    // pause / resume does not move started_at; only an explicit new window does
+    c.advance(std::time::Duration::from_secs(30));
+    s.transition_task(&t.id, TaskStatus::Paused, &[], None, &c)
+        .unwrap();
+    s.transition_task(&t.id, TaskStatus::Running, &[], None, &c)
+        .unwrap();
+    assert_eq!(s.get_task(&t.id).unwrap().started_at, Some(t0));
+    assert_eq!(s.increment_tool_calls(&t.id, c.now_utc()).unwrap(), 1);
+    assert_eq!(s.increment_tool_calls(&t.id, c.now_utc()).unwrap(), 2);
+    s.begin_budget_window(&t.id, c.now_utc()).unwrap();
+    let after = s.get_task(&t.id).unwrap();
+    assert_eq!(after.started_at, Some(c.now_utc()));
+    assert_eq!((after.tool_call_count, after.tool_call_base), (2, 2));
+    s.shift_budget_window(&t.id, std::time::Duration::from_secs(60))
+        .unwrap();
+    assert_eq!(
+        s.get_task(&t.id).unwrap().started_at,
+        Some(c.now_utc() + chrono::Duration::seconds(60))
+    );
+}
+
+#[test]
+fn recovery_leaves_verifying_and_awaiting_user_tasks_unchanged() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("elf.db");
+    let clock = FakeClock::at_default_start();
+    let (verifying, waiting, running);
+    let (v_events, w_events);
+    {
+        let mut s = Store::open(&path, &clock).unwrap();
+        verifying = task_in(&mut s, &clock, TaskStatus::Verifying).id;
+        waiting = task_in(&mut s, &clock, TaskStatus::AwaitingUser).id;
+        running = task_in(&mut s, &clock, TaskStatus::Running).id;
+        v_events = s.list_task_events(&verifying, 0).unwrap();
+        w_events = s.list_task_events(&waiting, 0).unwrap();
+    }
+    let mut s = Store::open(&path, &clock).unwrap();
+    let rec = s.recover_after_restart(&clock).unwrap();
+    assert_eq!(rec.len(), 1);
+    assert_eq!(rec[0].task_id, running);
+    assert_eq!(
+        s.get_task(&verifying).unwrap().status,
+        TaskStatus::Verifying
+    );
+    assert_eq!(
+        s.get_task(&waiting).unwrap().status,
+        TaskStatus::AwaitingUser
+    );
+    // no event, no step change: recovery did not touch them at all
+    assert_eq!(s.list_task_events(&verifying, 0).unwrap(), v_events);
+    assert_eq!(s.list_task_events(&waiting, 0).unwrap(), w_events);
+    // a second pass is still a no-op for them
+    assert!(s.recover_after_restart(&clock).unwrap().is_empty());
+    assert_eq!(
+        s.get_task(&verifying).unwrap().status,
+        TaskStatus::Verifying
+    );
+    // verifying may still be paused or cancelled (amended table)
+    s.transition_task(&verifying, TaskStatus::Paused, &[], None, &clock)
+        .unwrap();
+    s.transition_task(&waiting, TaskStatus::Cancelled, &[], None, &clock)
+        .unwrap();
+}
+
+#[test]
+fn step_results_are_saved_and_failed_steps_can_be_reopened() {
+    let (mut s, c) = mem();
+    let t = task_in(&mut s, &c, TaskStatus::Running);
+    let step = s
+        .begin_step(
+            &t.id,
+            "create_todos",
+            None,
+            SideEffect::LocalWrite,
+            Some("k1"),
+            c.now_utc(),
+        )
+        .unwrap();
+    let res = json!({"content": "ok", "is_error": false});
+    let done = s
+        .finish_step_with_result(
+            &step.id,
+            StepOutcome::Succeeded,
+            None,
+            Some(&res),
+            c.now_utc(),
+        )
+        .unwrap();
+    assert_eq!(done.result, Some(res));
+    assert!(
+        s.reopen_step(&step.id, c.now_utc()).is_err(),
+        "succeeded steps stay done"
+    );
+
+    let f = s
+        .begin_step(
+            &t.id,
+            "x",
+            None,
+            SideEffect::LocalWrite,
+            Some("k2"),
+            c.now_utc(),
+        )
+        .unwrap();
+    s.finish_step(&f.id, StepOutcome::Failed, None, c.now_utc())
+        .unwrap();
+    let again = s.reopen_step(&f.id, c.now_utc()).unwrap();
+    assert_eq!(
+        (again.status, again.finished_at, again.result),
+        (StepStatus::Started, None, None)
+    );
+
+    let e = s
+        .begin_step(
+            &t.id,
+            "send",
+            None,
+            SideEffect::ExternalWrite,
+            Some("k3"),
+            c.now_utc(),
+        )
+        .unwrap();
+    s.finish_step(&e.id, StepOutcome::Uncertain, None, c.now_utc())
+        .unwrap();
+    assert!(
+        s.reopen_step(&e.id, c.now_utc()).is_err(),
+        "external writes are never re-run"
+    );
+    let ev = s
+        .append_task_event(&t.id, "tool_started", &json!({"tool": "x"}), c.now_utc())
+        .unwrap();
+    assert_eq!(ev.event_type, "tool_started");
+    assert_eq!(
+        s.list_task_events(&t.id, 0)
+            .unwrap()
+            .last()
+            .unwrap()
+            .sequence,
+        ev.sequence
+    );
 }

@@ -1,0 +1,132 @@
+//! The lightweight chat path: conversation without a task (handbook section 1).
+
+use tokio_util::sync::CancellationToken;
+
+use super::history::to_messages;
+use super::turn::{TurnEnd, TurnParams};
+use super::{ModelBinding, Orchestrator};
+use crate::model::{FinishReason, MessagePart, ModelRequest, Role};
+use crate::schema::{ConversationId, ElfError, RequestId, Result};
+use crate::storage::StoredMessage;
+
+/// The assistant's reply on the chat path.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ChatReply {
+    /// Conversation the exchange belongs to.
+    pub conversation_id: ConversationId,
+    /// The stored assistant message.
+    pub message: StoredMessage,
+    /// The reply text.
+    pub text: String,
+    /// Why the model stopped (e.g. `length` if the answer was cut off).
+    pub finish: FinishReason,
+}
+
+impl Orchestrator {
+    /// Stores the user's message and streams a reply. No task is created, no tools are
+    /// offered, and nothing here can change task state. Text deltas go to the event sink.
+    /// If the stream fails after retries the user's message stays stored, so
+    /// [`Orchestrator::chat_retry`] can ask again without duplicating it.
+    pub async fn chat(
+        &self,
+        conversation: Option<&ConversationId>,
+        user_text: &str,
+        model: &ModelBinding,
+        cancel: &CancellationToken,
+    ) -> Result<ChatReply> {
+        if user_text.trim().is_empty() {
+            return Err(ElfError::invalid_input("message is empty"));
+        }
+        let now = self.clock.now_utc();
+        let conv = self.store.with(|s| {
+            let conv = match conversation {
+                Some(id) => s.get_conversation(id)?.id,
+                None => {
+                    let title: String = user_text.trim().chars().take(60).collect();
+                    s.create_conversation(&title, now)?.id
+                }
+            };
+            s.append_message(
+                &conv,
+                None,
+                Role::User,
+                &[MessagePart::Text {
+                    text: user_text.to_owned(),
+                }],
+                None,
+                now,
+            )?;
+            Ok(conv)
+        })?;
+        self.chat_retry(&conv, model, cancel).await
+    }
+
+    /// Streams a reply to the newest user message of a conversation that has no answer yet.
+    pub async fn chat_retry(
+        &self,
+        conversation: &ConversationId,
+        model: &ModelBinding,
+        cancel: &CancellationToken,
+    ) -> Result<ChatReply> {
+        let history = self.store.with(|s| s.list_messages(conversation))?;
+        if history.last().map(|m| m.role) != Some(Role::User) {
+            return Err(ElfError::invalid_input(
+                "the conversation has no unanswered user message",
+            ));
+        }
+        let request = ModelRequest {
+            model_profile_id: model.profile.id.clone(),
+            instructions: self.config.chat_instructions.clone(),
+            messages: to_messages(&history),
+            tools: Vec::new(),
+            output_contract: None,
+            output_budget: self.config.output_budget,
+            deadline: None,
+            request_id: RequestId::new(),
+        };
+        let end = self
+            .stream_turn(TurnParams {
+                model,
+                request,
+                token: cancel,
+                deadline: None,
+                task_id: None,
+                conversation_id: Some(conversation),
+            })
+            .await;
+        match end {
+            TurnEnd::Done(out) => {
+                if out.text.is_empty() {
+                    return Err(ElfError::ExternalFailure {
+                        message: "the model returned an empty reply".into(),
+                        retryable: true,
+                    });
+                }
+                let now = self.clock.now_utc();
+                let message = self.store.with(|s| {
+                    s.append_message(
+                        conversation,
+                        None,
+                        Role::Assistant,
+                        &[MessagePart::Text {
+                            text: out.text.clone(),
+                        }],
+                        None,
+                        now,
+                    )
+                })?;
+                Ok(ChatReply {
+                    conversation_id: conversation.clone(),
+                    message,
+                    text: out.text,
+                    finish: out.finish,
+                })
+            }
+            TurnEnd::Cancelled => Err(ElfError::Cancelled),
+            TurnEnd::Deadline => Err(ElfError::Timeout {
+                operation: "chat reply".into(),
+            }),
+            TurnEnd::Error { error, .. } => Err(error),
+        }
+    }
+}
