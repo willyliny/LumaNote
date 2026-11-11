@@ -1,3 +1,4 @@
+import { FLOATING_COLLAPSED_PX, FLOATING_EXPANDED_PX } from '../features/floating/layout';
 import type { IpcClient } from './ipc';
 import type { Appearance } from './ipc-types';
 import {
@@ -1281,7 +1282,8 @@ export function createMockIpc(): IpcClient {
     set_floating_expanded: ({ expanded }) => {
       // browser/mock: there is no native window to resize; just record the call order for tests
       debug.expandedLog.push({ expanded, wheelInDom: !!document.querySelector('.wheel') });
-      return { width: expanded ? 280 : 96, height: expanded ? 280 : 96, sprite_offset_x: 0, sprite_offset_y: 0 };
+      const edge = expanded ? FLOATING_EXPANDED_PX : FLOATING_COLLAPSED_PX;
+      return { width: edge, height: edge, sprite_offset_x: 0, sprite_offset_y: 0 };
     },
     open_window: ({ label, tab }) => {
       const file = label === 'panel' ? 'panel.html' : 'settings.html';

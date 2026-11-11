@@ -530,7 +530,8 @@
   background: var(--c-sunken);
   color: var(--c-text-3);
 }
-.skin__stage img {
+.skin__stage .sprite,
+.skin__stage .lsprite {
   width: 64px;
   height: 64px;
   object-fit: contain;

@@ -1,0 +1,94 @@
+{
+  "schemaVersion": 1,
+  "id": "paper-lantern",
+  "canvas": 384,
+  "base": "layers.json",
+  "defaultState": "idle",
+  "maxMountedLayers": 8,
+  "states": {
+    "idle": {
+      "label": "待命",
+      "hiddenBaseLayers": [],
+      "overlay": null,
+      "eyes": "open",
+      "blink": true,
+      "motion": "idle",
+      "composite": "states/idle"
+    },
+    "listening": {
+      "label": "聆聽輸入",
+      "hiddenBaseLayers": [
+        "glow"
+      ],
+      "overlay": {
+        "id": "state-listening",
+        "file": "state-listening",
+        "role": "state"
+      },
+      "eyes": "open",
+      "blink": true,
+      "motion": "idle",
+      "composite": "states/listening"
+    },
+    "processing": {
+      "label": "處理中",
+      "hiddenBaseLayers": [
+        "glow"
+      ],
+      "overlay": {
+        "id": "state-processing",
+        "file": "state-processing",
+        "role": "state"
+      },
+      "eyes": "open",
+      "blink": true,
+      "motion": "idle",
+      "composite": "states/processing"
+    },
+    "approval": {
+      "label": "等待確認",
+      "hiddenBaseLayers": [
+        "glow"
+      ],
+      "overlay": {
+        "id": "state-approval",
+        "file": "state-approval",
+        "role": "state"
+      },
+      "eyes": "open",
+      "blink": true,
+      "motion": "idle",
+      "composite": "states/approval"
+    },
+    "suggestion": {
+      "label": "有建議",
+      "hiddenBaseLayers": [
+        "glow"
+      ],
+      "overlay": {
+        "id": "state-suggestion",
+        "file": "state-suggestion",
+        "role": "state"
+      },
+      "eyes": "open",
+      "blink": true,
+      "motion": "idle",
+      "composite": "states/suggestion"
+    },
+    "paused": {
+      "label": "勿擾／暫停",
+      "hiddenBaseLayers": [
+        "glow"
+      ],
+      "overlay": {
+        "id": "state-paused",
+        "file": "state-paused",
+        "role": "state"
+      },
+      "eyes": "closed",
+      "blink": false,
+      "motion": "none",
+      "composite": "states/paused"
+    }
+  }
+}

@@ -14,6 +14,9 @@
   filter: drop-shadow(0 0 0.5px var(--sprite-halo)) drop-shadow(var(--shadow-sprite))
     drop-shadow(0 0 5px var(--skin-glow, transparent));
 }
+.sprite--plain {
+  filter: none;
+}
 .sprite--avatar {
   filter: none; /* sits on a panel surface, not on the wallpaper */
 }

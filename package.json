@@ -5,11 +5,13 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "build": "node scripts/check-floating-constants.mjs && tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "tauri": "tauri",
-    "sync:skins": "node scripts/sync-skins.mjs"
+    "sync:skins": "node scripts/sync-skins.mjs",
+    "check:floating": "node scripts/check-floating-constants.mjs",
+    "test:layered": "node scripts/test-layered.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "~2.12.4",

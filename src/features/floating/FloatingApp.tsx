@@ -7,6 +7,7 @@ import { Sprite } from '../../components/Sprite';
 import { SPRITE_STATES, type SpriteState } from '../../components/spriteState';
 import { actions, deriveSpriteState, useApp } from '../../state/app-store';
 import { Wheel } from './Wheel';
+import { FLOATING_SPRITE_PX } from './layout';
 import { dndPolicy, type WheelData, type WheelItem } from './wheel-items';
 import './floating.css';
 
@@ -292,7 +293,13 @@ export function FloatingApp() {
     <div className={`float float--${side} ${wheel.phase !== 'closed' ? 'float--wheel' : ''}`} data-state={state} data-testid="float-expanded" data-wheel={wheel.phase}>
       <div
         className="float__stage"
-        style={{ '--dx': `${wheel.offset.x}px`, '--dy': `${wheel.offset.y}px` } as CSSProperties}
+        style={
+          {
+            '--dx': `${wheel.offset.x}px`,
+            '--dy': `${wheel.offset.y}px`,
+            '--size-sprite': `${FLOATING_SPRITE_PX}px`,
+          } as CSSProperties
+        }
       >
       {(wheel.phase === 'open' || wheel.phase === 'closing') && (
         <Wheel data={data} closing={wheel.phase === 'closing'} onChoose={choose} onEnter={() => wheel.enter()} onLeave={wheel.leave} />
@@ -315,7 +322,7 @@ export function FloatingApp() {
           onPointerLeave={wheel.leave}
           onPointerDown={onSpriteDown}
         >
-          <Sprite state={state} size="100%" title="" />
+          <Sprite state={state} size={FLOATING_SPRITE_PX} title="" interactive />
         </button>
         {wheel.phase === 'closed' && (
           <button

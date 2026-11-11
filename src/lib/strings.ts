@@ -258,8 +258,10 @@ export const t = {
     previewing: '預覽中',
     preparing: '素材準備中',
     preferredTheme: { light: '適合淺色', dark: '適合深色' },
-    cardLabel: (name: string, family: string, current: boolean, ready: boolean) =>
-      `${name}，${family}${current ? '，目前使用' : ''}${ready ? '' : '，素材準備中，無法套用'}`,
+    cardLabel: (name: string, family: string, current: boolean, ready: boolean, layered = false) =>
+      `${name}，${family}${layered ? '，2.5D 立體動態' : ''}${current ? '，目前使用' : ''}${ready ? '' : '，素材準備中，無法套用'}`,
+    layered: '2.5D',
+    layeredTip: '立體分層造型，浮動入口會有輕微漂浮與眨眼；系統開啟「減少動態」時改用平面圖。',
     previewTitle: (name: string) => `${name}的六種狀態`,
     previewNote: '預覽只在這個視窗，按「套用造型」後才會儲存並更新浮動入口與面板。',
     lightDesktop: '淺色桌布',

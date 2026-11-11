@@ -17,7 +17,7 @@ html[data-backdrop='1'][data-theme='dark'] {
 }
 
 /*
- * The window is either 96x96 (collapsed) or 280x280 (wheel open). The sprite is ALWAYS the
+ * The window is either 128x128 (collapsed) or 344x344 (wheel open); sizes: see layout.ts. The sprite is ALWAYS the
  * centre of the viewport, so it stays at the same screen position when the shell resizes the
  * window around its centre.
  */
@@ -72,7 +72,7 @@ html[data-backdrop='1'][data-theme='dark'] {
   opacity: 1;
 }
 
-/* ---------------- radial wheel (window expanded to 280x280) ---------------- */
+/* ---------------- radial wheel (window expanded to 344x344, see layout.ts) ---------------- */
 .wheel {
   position: absolute;
   left: 50%;
@@ -86,8 +86,8 @@ html[data-backdrop='1'][data-theme='dark'] {
   position: absolute;
   left: 0;
   top: 0;
-  width: 84px;
-  height: 56px; /* >= 44 px hit area in both directions */
+  width: var(--wheel-item-w, 84px);
+  height: var(--wheel-item-h, 56px); /* >= 44 px hit area in both directions */
   display: grid;
   align-content: center;
   justify-items: start;
@@ -176,7 +176,7 @@ html[data-backdrop='1'][data-theme='dark'] {
   }
 }
 
-/* the small, non-modal hint beside the sprite (needs a window wider than the 96 px collapsed one) */
+/* the small, non-modal hint beside the sprite (needs a window wider than the 128 px collapsed one) */
 .hint {
   position: absolute;
   top: 50%;

@@ -141,7 +141,7 @@ export function ChatView({ onOpenTasks }: { onOpenTasks: () => void }) {
       >
         {messages.length === 0 ? (
           <div className="chat__empty">
-            <Sprite state="idle" size={96} title="" />
+            <Sprite state="idle" size={96} title="" animate={false} />
             <h2>{t.chat.emptyTitle}</h2>
             <p>{t.chat.emptyBody}</p>
             <button

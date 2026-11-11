@@ -1,0 +1,124 @@
+/*
+ * 2.5D sprite. Rules of this file (brief section "hard limits"): only transform, translate, scale and
+ * opacity are ever animated; no filter, no backdrop-filter, no blur. Glow and shadow are baked into the PNGs.
+ * Everything is gated on data-animate="1"; a sleeping sprite (document hidden / 30 s without pointer)
+ * pauses every looping animation, so an idle desktop costs nothing.
+ */
+.lsprite {
+  position: relative;
+  display: block;
+  flex: none;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-drag: none;
+  contain: layout style;
+}
+.lsprite .l {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  pointer-events: none;
+  -webkit-user-drag: none;
+}
+.lsprite__rig {
+  position: absolute;
+  inset: 0;
+  transform-origin: var(--px, 50%) var(--py, 62%);
+  transform: rotate(calc(var(--tilt, 0) * 1deg));
+  transition: transform 260ms cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+.l-fade {
+  position: absolute;
+  inset: 0;
+}
+
+/* eyes: exactly one set is on; a blink swaps them (instantly, for 150 ms) */
+.lsprite .l[data-on='0'] {
+  opacity: 0;
+}
+.lsprite[data-blinking='1'] .l--eyes-open {
+  opacity: 0 !important;
+}
+.lsprite[data-blinking='1'] .l--eyes-closed {
+  opacity: 1 !important;
+}
+
+/* the reflection slides against the tilt */
+.lsprite .l--highlight {
+  transform: translate(var(--hx, 0px), var(--hy, 0px));
+  transition: transform 260ms cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+
+/* ---------- state cross-fade (glow, state marker) ---------- */
+.l-fade--in {
+  animation: l-in 140ms ease-out backwards;
+}
+.l-fade--out {
+  animation: l-out 140ms ease-in forwards;
+}
+@keyframes l-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes l-out {
+  to {
+    opacity: 0;
+  }
+}
+
+/* ---------- idle motion ---------- */
+/* 2 s each way = 4 s period. The -1 s delay starts every layer at the midpoint (= rest position),
+   so mounting never jumps. `translate` is its own property: it composes with the highlight's transform. */
+.lsprite[data-animate='1'] .l--body,
+.lsprite[data-animate='1'] .l--highlight,
+.lsprite[data-animate='1'] .l--eyes-open,
+.lsprite[data-animate='1'] .l--eyes-closed {
+  animation: ls-float 2s ease-in-out -1s infinite alternate;
+}
+/* the accessory trails the body by 0.2 s */
+.lsprite[data-animate='1'] .l--accessory {
+  animation: ls-float 2s ease-in-out -0.8s infinite alternate;
+}
+/* body up = shadow smaller and fainter */
+.lsprite[data-animate='1'] .l--shadow {
+  transform-origin: 50% 80%;
+  animation: ls-shadow 2s ease-in-out -1s infinite alternate;
+}
+.lsprite[data-animate='1'] .l--glow {
+  animation: ls-glow 2.6s ease-in-out -1.3s infinite alternate;
+}
+@keyframes ls-float {
+  from {
+    translate: 0 -3px;
+  }
+  to {
+    translate: 0 3px;
+  }
+}
+@keyframes ls-shadow {
+  from {
+    scale: 0.95;
+    opacity: 0.8;
+  }
+  to {
+    scale: 1.04;
+    opacity: 1;
+  }
+}
+@keyframes ls-glow {
+  from {
+    opacity: 0.72;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* sleeping (hidden / idle) or a state that forbids motion (paused): freeze in place, never snap */
+.lsprite[data-asleep='1'] .l,
+.lsprite[data-motion='none'] .l {
+  animation-play-state: paused;
+}

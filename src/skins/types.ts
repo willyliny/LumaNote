@@ -1,4 +1,5 @@
 import type { SkinState } from './states';
+import type { LayeredArt } from './layered/schema';
 
 export type SkinFamily = 'quiet-desk' | 'night-voyage';
 export type SkinTheme = 'light' | 'dark';
@@ -39,6 +40,14 @@ export interface Skin extends SkinDeclaration {
   onAccent: SkinJson['onAccent'] | null;
   glow: string | null;
   assets: SkinAssets;
+  /**
+   * 2.5D capability: the layered set, present only when layers.json + states.json validate and every
+   * referenced PNG exists at @1x and @2x in the bundled assets. Computed, never declared.
+   * Optional art: a skin without it is still complete and renders its flat SVG.
+   */
+  layered: LayeredArt | null;
+  /** why a layered folder was ignored (dev tools and tests); null when absent or fine */
+  layeredProblem: string | null;
   /** true only when every asset exists, skin.json is valid and the family palette is available */
   complete: boolean;
   /** human-readable list of what is missing (for dev tools and tests, not shown to users) */

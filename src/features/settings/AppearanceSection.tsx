@@ -106,7 +106,7 @@ export function AppearanceSection() {
                   <ul>
                     {SPRITE_STATES.map((st) => (
                       <li key={st}>
-                        <Sprite state={st} skin={selected} size={48} title={t.sprite.label[st]} />
+                        <Sprite state={st} skin={selected} size={64} animate={false} title={t.sprite.label[st]} />
                         <span>{t.sprite.label[st]}</span>
                       </li>
                     ))}
@@ -144,7 +144,6 @@ function SkinCard({
   onPick: () => void;
 }) {
   const family = t.skins.family[skin.family];
-  const idle = skin.assets.states.idle;
   return (
     <button
       id={`skin-${skin.id}`}
@@ -153,13 +152,18 @@ function SkinCard({
       aria-checked={selected}
       aria-disabled={!skin.complete}
       tabIndex={selected ? 0 : -1}
-      aria-label={t.skins.cardLabel(skin.name, family, current, skin.complete)}
+      aria-label={t.skins.cardLabel(skin.name, family, current, skin.complete, !!skin.layered)}
       className={`skin ${selected ? 'skin--on' : ''} ${skin.complete ? '' : 'skin--wait'}`}
       data-skin-id={skin.id}
       onClick={onPick}
     >
       <span className="skin__stage" aria-hidden="true">
-        {skin.complete && idle ? <img src={idle} alt="" draggable={false} /> : <Icon name="ring" />}
+        {isComplete(skin) ? (
+          // only the selected card moves: a calm page, and one animated sprite at most
+          <Sprite state="idle" skin={skin} size={64} animate={selected} title="" plain />
+        ) : (
+          <Icon name="ring" />
+        )}
       </span>
       <span className="skin__name">{skin.name}</span>
       <span className="skin__family">{family}</span>
@@ -171,6 +175,11 @@ function SkinCard({
           </span>
         )}
         {!current && selected && skin.complete && <span className="badge badge--plain">{t.skins.previewing}</span>}
+        {skin.layered && (
+          <span className="badge badge--plain" title={t.skins.layeredTip} data-testid="badge-layered">
+            {t.skins.layered}
+          </span>
+        )}
         {!skin.complete && (
           <span className="badge badge--warn">
             <Icon name="clock" />

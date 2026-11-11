@@ -11,6 +11,7 @@
 import type { MissingReason, Skin, SkinDeclaration, SkinJson, CompleteSkin, SkinFamily } from './types';
 import { SKIN_STATES, type SkinState } from './states';
 import { FAMILY_TOKENS_READY } from './family';
+import { parseLayered, type ImageScale } from './layered/schema';
 
 export const DEFAULT_SKIN_ID = 'leaf-cloak';
 
@@ -35,6 +36,25 @@ const skinJsons = import.meta.glob('../assets/skins/*/skin.json', {
   eager: true,
   import: 'default',
 }) as Record<string, unknown>;
+
+// 2.5D layer PNGs and their two manifests (copied by scripts/sync-skins.mjs only when the whole set validated)
+const layerUrls = import.meta.glob('../assets/skins/*/layered/*.png', {
+  eager: true,
+  query: '?no-inline',
+  import: 'default',
+}) as Record<string, string>;
+const layerJsons = import.meta.glob('../assets/skins/*/layered/*.json', {
+  eager: true,
+  import: 'default',
+}) as Record<string, unknown>;
+
+function layeredFor(id: string) {
+  const base = layerJsons[`../assets/skins/${id}/layered/layers.json`];
+  const manifest = layerJsons[`../assets/skins/${id}/layered/states.json`];
+  if (base === undefined && manifest === undefined) return { art: null, problem: null };
+  const r = parseLayered(id, base, manifest, (file: string, scale: ImageScale) => layerUrls[`../assets/skins/${id}/layered/${file}@${scale}x.png`]);
+  return typeof r === 'string' ? { art: null, problem: r } : { art: r, problem: null };
+}
 
 function urlFor(id: string, file: string): string | undefined {
   return svgUrls[`../assets/skins/${id}/${file}.svg`];
@@ -98,8 +118,11 @@ export function resolveSkin(
     missing.push(`${decl.family} palette`);
     reasons.add('family-tokens');
   }
+  const layered = layeredFor(decl.id);
   return {
     ...decl,
+    layered: layered.art,
+    layeredProblem: layered.problem,
     preferredTheme: json?.preferredTheme ?? null,
     accent: json?.accent ?? null,
     onAccent: json?.onAccent ?? null,

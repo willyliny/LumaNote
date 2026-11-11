@@ -15,13 +15,19 @@
  * block (src/styles/night-voyage.generated.css) and flags the family as available. Without the file the
  * block is empty and night-voyage skins stay "素材準備中".
  *
+ * Optional 2.5D art: <src>/<id>/layered/{layers.json,states.json,<file>@1x.png,<file>@2x.png}
+ * (docs/briefs/astra-2p5d-night-letter-brief.zh-TW.md). It is validated by scripts/layered-validate.mjs and
+ * copied to <dest>/<id>/layered/ ONLY when the whole set passes (all-or-nothing). A failing set is reported
+ * as LAYERED-REJECT, any previously synced layered copy is removed, and the skin keeps its flat SVG art.
+ *
  * Folders in <src> that are neither registered in registry.ts nor contain a skin.json (e.g. app-icon) are skipped.
  *
- * Exit code 0: everything found passed. 1: at least one skin or the token file was rejected.
+ * Exit code 0: everything found passed. 1: at least one skin, layered set or the token file was rejected.
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { validateLayeredDir, MAX_SKIN_BYTES } from './layered-validate.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -251,12 +257,16 @@ function validateSkinDir(dir, id, registry) {
   return { errors, warnings };
 }
 
-function copySkin(dir, id) {
+function copySkin(dir, id, layeredFiles) {
   const tmp = path.join(DEST, `.${id}.tmp`);
   fs.rmSync(tmp, { recursive: true, force: true });
   fs.mkdirSync(tmp, { recursive: true });
   for (const f of [...REQUIRED_SVGS.map((k) => `${k}.svg`), 'skin.json']) {
     fs.copyFileSync(path.join(dir, f), path.join(tmp, f));
+  }
+  if (layeredFiles?.length) {
+    fs.mkdirSync(path.join(tmp, 'layered'));
+    for (const f of layeredFiles) fs.copyFileSync(path.join(dir, 'layered', f), path.join(tmp, 'layered', f));
   }
   fs.rmSync(path.join(DEST, id), { recursive: true, force: true });
   fs.renameSync(tmp, path.join(DEST, id));
@@ -353,8 +363,9 @@ function main() {
   for (const c of candidates) {
     const v = validateSkinDir(c.dir, c.id, registry);
     const ok = v.errors.length === 0;
-    if (ok) copySkin(c.dir, c.id);
-    results.push({ id: c.id, ok, errors: v.errors, warnings: v.warnings, origin: c.origin });
+    const layered = ok ? validateLayeredDir(c.dir, c.id) : null;
+    if (ok) copySkin(c.dir, c.id, layered.ok ? layered.files : null);
+    results.push({ id: c.id, ok, errors: v.errors, warnings: v.warnings, origin: c.origin, layered });
   }
 
   // family palette
@@ -384,6 +395,15 @@ function main() {
     if (r.ok) console.log(`       copied ${REQUIRED_SVGS.length} svg + skin.json -> ${path.relative(ROOT, path.join(DEST, r.id)) || DEST}`);
     for (const e of r.errors) console.log(`       x ${e}`);
     for (const w of r.warnings) console.log(`       ! ${w}`);
+    const L = r.layered;
+    if (L?.ok) {
+      console.log(`       2.5D layered: ${L.info.layers} layers + ${L.info.overlays} state overlays, ${L.info.pngs} png, ${L.bytes} bytes (limit ${MAX_SKIN_BYTES}) -> layered/`);
+    } else if (L && !L.absent) {
+      console.log('LAYERED-REJECT ' + r.id + '  (flat SVG art stays in use; no layered file was copied)');
+      for (const e of L.errors) console.log(`       x layered: ${e}`);
+    } else if (L?.absent) {
+      console.log(`       (no layered/ folder: flat SVG art only)`);
+    }
   }
   console.log(`\n${familyNote}`);
   const registered = [...registry.keys()];
@@ -392,7 +412,11 @@ function main() {
   if (waiting.length) console.log(`registered but no assets in dest (素材準備中): ${waiting.join(', ')}`);
   console.log(`\n${synced.length} synced, ${results.filter((r) => !r.ok).length} rejected`);
 
-  process.exit(results.some((r) => !r.ok) || familyFailed ? 1 : 0);
+  const layeredFailed = results.filter((r) => r.layered && !r.layered.ok && !r.layered.absent);
+  if (layeredFailed.length) console.log(`layered sets rejected (flat art still works): ${layeredFailed.map((r) => r.id).join(', ')}`);
+  const layeredOk = results.filter((r) => r.layered?.ok);
+  console.log(`layered 2.5D art: ${layeredOk.length} skins, ${layeredOk.reduce((n, r) => n + r.layered.bytes, 0)} bytes in total`);
+  process.exit(results.some((r) => !r.ok) || layeredFailed.length || familyFailed ? 1 : 0);
 }
 
 main();

@@ -2,15 +2,10 @@ import type { CSSProperties, PointerEvent } from 'react';
 import { Icon } from '../../components/Icon';
 import { t } from '../../lib/strings';
 import { WHEEL_ITEMS, WHEEL_LAYOUT, type WheelData, type WheelItem } from './wheel-items';
+import { WHEEL_ITEM_H, WHEEL_ITEM_W, wheelSlot } from './layout';
 
-/** Slots sit on an ellipse (wider than tall) so 84x56 cards never overlap: see floating.css. */
-const RX = 100;
-const RY = 92;
-
-function pos(i: number, n: number) {
-  const a = ((-90 + (360 / n) * i) * Math.PI) / 180;
-  return { x: Math.round(RX * Math.cos(a)), y: Math.round(RY * Math.sin(a)) };
-}
+/** Slots sit on an ellipse (wider than tall) around the 96 px sprite: radii and card size live in layout.ts. */
+const pos = wheelSlot;
 
 /**
  * Pointer-only radial menu. The floating window cannot take keyboard focus on Windows, so nothing
@@ -31,7 +26,7 @@ export function Wheel({
 }) {
   const ids = WHEEL_LAYOUT;
   return (
-    <div className={`wheel ${closing ? 'wheel--closing' : ''}`} role="group" aria-label={t.wheel.label} data-testid="wheel">
+    <div className={`wheel ${closing ? 'wheel--closing' : ''}`} role="group" aria-label={t.wheel.label} data-testid="wheel" style={{ '--wheel-item-w': `${WHEEL_ITEM_W}px`, '--wheel-item-h': `${WHEEL_ITEM_H}px` } as CSSProperties}>
       {ids.map((id, i) => {
         const item = WHEEL_ITEMS[id];
         const v = item.value(data);

@@ -185,7 +185,7 @@
   --size-target: 44px; /* minimum hit area for ordinary actions */
   --size-control: var(--size-target);
   --size-icon: 18px;
-  --size-sprite: 64px; /* floating entry */
+  --size-sprite: 96px; /* floating entry; FLOATING_SPRITE_PX in features/floating/layout.ts is the source */
   --size-sprite-header: 36px; /* panel avatar: art is legible at 24-40 */
   --size-dock-w: 12px; /* visible width of the collapsed strip */
   --size-dock-h: 48px;
