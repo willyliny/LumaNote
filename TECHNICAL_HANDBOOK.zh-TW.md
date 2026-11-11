@@ -206,7 +206,7 @@ API key 只送往其綁定的端點；修改端點必須重新確認憑證綁定
 | running | 模型循環或工具執行中 | awaiting_user、paused、verifying、uncertain、failed、cancelled |
 | awaiting_user | 等待授權或使用者決定 | running、cancelled |
 | paused | 達到工具次數、時間或預算上限，或等待連線；可恢復 | running、cancelled |
-| verifying | 檢查成果證據 | completed、running、failed |
+| verifying | 檢查成果證據 | completed、running、paused、failed、cancelled |
 | uncertain | 外部寫入結果無法判定，需人工確認 | completed、failed、cancelled |
 | completed、failed、cancelled | 終止狀態 | 無 |
 
@@ -215,7 +215,10 @@ API key 只送往其綁定的端點；修改端點必須重新確認憑證綁定
 - 狀態只能由協調器依轉移表變更；非法轉移回傳錯誤並記錄，不靜默修正。
 - completed 只能由 verifying 或 uncertain 進入，且必須附至少一筆 evidence_ref。
 - 每次轉移寫入 task_events（遞增 sequence），前端事件的 sequence 由此而來。
-- 程序重啟時：running 的任務若沒有執行中的外部寫入步驟，回到 paused 等待恢復；有執行中外部寫入步驟者進入 uncertain。
+- 證據（evidence_ref）限於同一任務的成果檔（artifact）或已成功的步驟；其他一律拒收。
+- 程序重啟時：running 的任務若沒有執行中的外部寫入步驟，回到 paused 等待恢復；有執行中外部寫入步驟者進入 uncertain。verifying 的任務維持原狀並重新執行驗證（驗證只讀取，不產生副作用）；awaiting_user 維持原狀。
+- completed 不可重開。使用者對結果有異議時建立後續任務，以 parent_task_id 連回原任務，保留原紀錄。
+- ModelRequest.deadline 與任務的工具次數、時間、預算上限由協調器負責執行；適配器只負責回應取消。
 
 每次工具呼叫遵循以下流程：
 
@@ -253,7 +256,7 @@ SQLite 作為第一版唯一業務資料庫，由 Rust 服務統一存取。先�
 
 | 資料表 | 核心欄位 |
 | --- | --- |
-| tasks | id, intent, status, scope_json, created_at, updated_at, result_ref |
+| tasks | id, parent_task_id, intent, status, scope_json, limits_json, tool_call_count, started_at, untrusted_content, created_at, updated_at, result_ref |
 | task_steps | id, task_id, seq, tool, args_redacted, side_effect, status, idempotency_key, started_at, finished_at, evidence_ref |
 | activity_segments | id, app_id, start_at, end_at, active_ms, source, consent_version |
 | summaries | id, period_start, period_end, body, source_ids, version |
@@ -417,6 +420,7 @@ docs/
 5. 新增不受信任內容的任務層級標記與強制確認規則（第 8 章）。
 6. 驗收新增狀態機、崩潰恢復、可測性三項，並界定記憶體量測範圍（第 14 章）。
 7. 新增多 Agent 開發流程（第 17 章）。
+8. C1 審查後補充：verifying 可轉為 paused 與 cancelled；定義證據範圍、verifying 與 awaiting_user 的重啟規則、後續任務、上限執行者；tasks 增加 parent_task_id、limits_json、tool_call_count、started_at、untrusted_content。
 
 待技術查證後定案的項目：兩種協定的具體選擇、IPC 型別產生工具、Windows 通知在開發模式與安裝後的行為差異、憑證儲存套件。查證結果寫入 docs/research，定案後更新本手冊。
 
