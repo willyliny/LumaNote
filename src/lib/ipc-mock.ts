@@ -1,4 +1,5 @@
 import type { IpcClient } from './ipc';
+import type { Appearance } from './ipc-types';
 import {
   IpcError,
   SCHEMA_VERSION,
@@ -512,6 +513,25 @@ interface MockDebug {
   /** Swallow the next n events on THIS window to prove the UI re-syncs from get_task. */
   dropNextEvents(n: number): void;
   speed: number;
+  /** every set_floating_expanded call, with whether the wheel was already in the DOM at call time */
+  expandedLog: { expanded: boolean; wheelInDom: boolean }[];
+}
+
+/** The mock "backend" keeps appearance in localStorage so it survives reloads and is shared by windows. */
+const APPEARANCE_KEY = 'elf-mock-appearance';
+function readStoredAppearance(): Appearance {
+  try {
+    const raw = localStorage.getItem(APPEARANCE_KEY);
+    if (raw) {
+      const o = JSON.parse(raw) as Partial<Appearance>;
+      if (typeof o.skin_id === 'string' && (o.theme === 'light' || o.theme === 'dark' || o.theme === 'system')) {
+        return { skin_id: o.skin_id, theme: o.theme };
+      }
+    }
+  } catch {
+    /* fall through to default */
+  }
+  return { skin_id: 'leaf-cloak', theme: 'system' };
 }
 
 export function createMockIpc(): IpcClient {
@@ -1243,6 +1263,26 @@ export function createMockIpc(): IpcClient {
       commit();
       return routes;
     },
+    get_appearance: () => readStoredAppearance(),
+    set_appearance: (a) => {
+      // Only appearance is written here: no task, model, memory or notification state is touched.
+      const next: Appearance = { skin_id: String(a.skin_id), theme: a.theme };
+      if (!next.skin_id || !['light', 'dark', 'system'].includes(next.theme)) {
+        throw err('permission_denied', 'invalid appearance');
+      }
+      try {
+        localStorage.setItem(APPEARANCE_KEY, JSON.stringify(next));
+      } catch {
+        /* storage unavailable: still propagate to open windows */
+      }
+      emit('appearance_changed', { schema_version: SCHEMA_VERSION, appearance: next });
+      return next;
+    },
+    set_floating_expanded: ({ expanded }) => {
+      // browser/mock: there is no native window to resize; just record the call order for tests
+      debug.expandedLog.push({ expanded, wheelInDom: !!document.querySelector('.wheel') });
+      return { width: expanded ? 280 : 96, height: expanded ? 280 : 96, sprite_offset_x: 0, sprite_offset_y: 0 };
+    },
     open_window: ({ label, tab }) => {
       const file = label === 'panel' ? 'panel.html' : 'settings.html';
       const q = tab ? `?tab=${encodeURIComponent(tab)}` : '';
@@ -1257,6 +1297,7 @@ export function createMockIpc(): IpcClient {
       dropCount = n;
     },
     speed: SPEED,
+    expandedLog: [],
   };
   (window as unknown as { __elfMock: MockDebug }).__elfMock = debug;
 

@@ -213,7 +213,7 @@
 .composer__input {
   flex: 1;
   min-width: 0;
-  max-height: 160px;
+  max-height: 160px; /* about six lines, then the field scrolls */
 }
 .composer__send {
   flex: none;

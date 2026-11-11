@@ -61,7 +61,7 @@
   font-weight: var(--weight-bold);
 }
 .md a {
-  color: var(--c-primary);
+  color: var(--c-link);
   text-decoration: underline;
   text-underline-offset: 2px;
 }

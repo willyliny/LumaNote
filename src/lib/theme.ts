@@ -19,6 +19,16 @@ function apply(pref: ThemePref) {
   else root.setAttribute('data-theme', pref);
 }
 
+/** True when the URL forces a theme (screenshots/preview). Stored preferences must not override it. */
+export function hasThemeOverride(): boolean {
+  try {
+    const q = new URLSearchParams(location.search).get('theme');
+    return q === 'light' || q === 'dark';
+  } catch {
+    return false;
+  }
+}
+
 export function getThemePref(): ThemePref {
   try {
     const v = localStorage.getItem(KEY);

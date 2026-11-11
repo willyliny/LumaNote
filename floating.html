@@ -4,6 +4,21 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>精靈助手 浮動入口</title>
+    <!-- The window is transparent: nothing but the sprite art / wheel / hint may paint. Inline so it applies
+         before any stylesheet or React loads (no flash). Dev backdrops opt in via html[data-backdrop]. -->
+    <style>
+      html,
+      body,
+      #root {
+        background: transparent;
+        margin: 0;
+        box-shadow: none;
+        color-scheme: normal;
+      }
+      :root {
+        color-scheme: normal !important;
+      }
+    </style>
     <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
   </head>
   <body class="body-floating">

@@ -1,0 +1,15 @@
+{
+  "id": "prism-scribe",
+  "name": "稜鏡書靈",
+  "family": "night-voyage",
+  "preferredTheme": "dark",
+  "accent": {
+    "light": "#176246",
+    "dark": "#91EBC2"
+  },
+  "onAccent": {
+    "light": "#FFFFFF",
+    "dark": "#0B2D20"
+  },
+  "glow": "#91EBC2"
+}

@@ -494,11 +494,40 @@ export interface CommandMap {
   delete_model_profile: { args: { id: string }; result: Record<string, never> };
   test_model_profile: { args: { profile_id: string }; result: ConnectionTestResult };
   set_model_routes: { args: { routes: ModelRoute[] }; result: ModelRoute[] };
+  /**
+   * NEW (F2a, not in handbook): appearance settings, persisted by the backend. `skin_id` is an opaque
+   * string to the backend; the UI decides whether it is a known, complete skin and falls back to the
+   * default skin (with a visible notice) when it is not. Never touches model/task/memory/notification data.
+   */
+  get_appearance: { args: Record<string, never>; result: Appearance };
+  /** NEW (F2a): replaces the stored appearance and emits `appearance_changed` to every window. */
+  set_appearance: { args: Appearance; result: Appearance };
+  /**
+   * NEW (F2a, shell implements it in Rust): ask the shell to enlarge the floating window around its
+   * centre (collapsed 96x96 -> expanded 280x280 for the radial menu) or restore it. Wait for it to resolve before
+   * showing the wheel; keep the sprite at window centre + the returned offset. The UI calls it
+   * with true BEFORE showing the wheel and with false after the close animation. No-op in the mock.
+   */
+  set_floating_expanded: {
+    args: { expanded: boolean };
+    /**
+     * logical px. When the expanded window is clamped at a screen edge the shell shifts it;
+     * sprite_offset_x/y is the sprite centre's offset from the window centre (0 on collapse).
+     */
+    result: { width: number; height: number; sprite_offset_x: number; sprite_offset_y: number };
+  };
   /** NOT IN HANDBOOK: floating entry may only open the panel (handbook 10); done via backend */
   open_window: {
     args: { label: 'panel' | 'settings'; tab: string | null };
     result: Record<string, never>;
   };
+}
+
+/** NEW (F2a) */
+export type ThemeChoice = 'light' | 'dark' | 'system';
+export interface Appearance {
+  skin_id: string;
+  theme: ThemeChoice;
 }
 
 export type CommandName = keyof CommandMap;
@@ -557,7 +586,17 @@ export interface ObservationStatusEvent extends EventBase {
   status: ObservationStatus;
 }
 
+/**
+ * NEW (F2a): fired to every window after `set_appearance`. Deliberately NOT an EventBase: it carries
+ * no task_id/sequence, so it cannot disturb the global sequence used for gap detection.
+ */
+export interface AppearanceChangedEvent {
+  schema_version: number;
+  appearance: Appearance;
+}
+
 export interface EventMap {
+  appearance_changed: AppearanceChangedEvent;
   task_progress: TaskProgressEvent;
   assistant_delta: AssistantDeltaEvent;
   approval_required: ApprovalRequiredEvent;
@@ -568,6 +607,7 @@ export interface EventMap {
 
 export type EventName = keyof EventMap;
 export const EVENT_NAMES: readonly EventName[] = [
+  'appearance_changed',
   'task_progress',
   'assistant_delta',
   'approval_required',

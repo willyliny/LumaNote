@@ -7,7 +7,7 @@ import type {
   Unsubscribe,
 } from './ipc-types';
 import { createMockIpc } from './ipc-mock';
-import { createTauriIpc } from './ipc-tauri';
+import { createTauriIpc, withNativeCommands } from './ipc-tauri';
 
 /**
  * The only door between the UI and the backend. Mirrors Tauri's
@@ -26,7 +26,7 @@ export interface IpcClient {
  */
 function selectIpc(): IpcClient {
   if (import.meta.env.VITE_IPC === 'tauri') return createTauriIpc();
-  return createMockIpc();
+  return withNativeCommands(createMockIpc()); // mock by default; real Rust for NATIVE_COMMANDS inside Tauri
 }
 
 export const ipc: IpcClient = selectIpc();

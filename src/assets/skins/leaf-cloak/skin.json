@@ -1,0 +1,14 @@
+{
+  "id": "leaf-cloak",
+  "name": "葉披風",
+  "family": "quiet-desk",
+  "preferredTheme": "light",
+  "accent": {
+    "light": "#365D46",
+    "dark": "#B7D3AC"
+  },
+  "onAccent": {
+    "light": "#FFFFFF",
+    "dark": "#172319"
+  }
+}

@@ -8,7 +8,8 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "sync:skins": "node scripts/sync-skins.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "~2.12.4",

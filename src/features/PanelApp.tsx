@@ -52,7 +52,7 @@ export function PanelApp() {
     <div className="shell">
       <header className="shell__head">
         <div className="shell__sprite">
-          <Sprite state={sprite} size="100%" />
+          <Sprite state={sprite} size="100%" variant="avatar" />
         </div>
         <div className="shell__title">
           <h1>{t.appName}</h1>

@@ -1,0 +1,15 @@
+{
+  "id": "night-letter",
+  "name": "夜航",
+  "family": "night-voyage",
+  "preferredTheme": "dark",
+  "accent": {
+    "light": "#006277",
+    "dark": "#80E5F2"
+  },
+  "onAccent": {
+    "light": "#FFFFFF",
+    "dark": "#09252D"
+  },
+  "glow": "#80E5F2"
+}

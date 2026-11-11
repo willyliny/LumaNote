@@ -1,100 +1,44 @@
+/*
+ * Skin art is an <img>. Everything here is skin-independent presentation:
+ * a hairline halo so art survives any wallpaper, an optional skin glow, and calm motion.
+ * Art never moves between states (same file geometry); only a slow opacity pulse while processing.
+ */
 .sprite {
   display: block;
-  overflow: visible;
-  filter: drop-shadow(var(--shadow-sprite));
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  user-select: none;
+  -webkit-user-drag: none;
+  pointer-events: none;
+  filter: drop-shadow(0 0 0.5px var(--sprite-halo)) drop-shadow(var(--shadow-sprite))
+    drop-shadow(0 0 5px var(--skin-glow, transparent));
 }
-.sprite__body-wrap,
-.sprite__orbit,
-.sprite__sprout,
-.sprite__badge,
-.sprite__wave {
-  transform-box: fill-box;
-  transform-origin: center;
-  animation-play-state: var(--sprite-play);
+.sprite--avatar {
+  filter: none; /* sits on a panel surface, not on the wallpaper */
+}
+.sprite--collapsed {
+  object-fit: fill;
 }
 
-/* idle: slow breathing bob */
-.sprite--idle .sprite__body-wrap {
-  animation: sprite-bob var(--motion-sprite-idle) ease-in-out infinite;
-  animation-play-state: var(--sprite-play);
+@media (prefers-reduced-motion: no-preference) {
+  /* processing: slow breathing of the whole image (handbook: 1800 ms, body must not jump) */
+  .sprite--processing {
+    animation: sprite-processing var(--motion-processing) ease-in-out infinite;
+  }
+  /* listening / suggestion: a single fade-in when the state appears, then still */
+  .sprite--listening,
+  .sprite--suggestion {
+    animation: sprite-in var(--motion-base) ease-out 1;
+  }
 }
-@keyframes sprite-bob {
+@keyframes sprite-processing {
   50% {
-    transform: translateY(-2px);
+    opacity: 0.72;
   }
 }
-
-/* listening: sound arcs ripple outward */
-.sprite__wave--1 {
-  animation: sprite-wave var(--motion-sprite-listen) ease-out infinite;
-}
-.sprite__wave--2 {
-  animation: sprite-wave var(--motion-sprite-listen) ease-out infinite;
-  animation-delay: calc(var(--motion-sprite-listen) / 3);
-}
-@keyframes sprite-wave {
-  0% {
-    opacity: 0;
-  }
-  35% {
-    opacity: 1;
-  }
-  100% {
-    opacity: 0;
+@keyframes sprite-in {
+  from {
+    opacity: 0.35;
   }
 }
-
-/* working: dots orbit the body */
-.sprite__orbit {
-  transform-origin: 32px 36px;
-  transform-box: view-box;
-  animation: sprite-spin var(--motion-sprite-work) linear infinite;
-  animation-play-state: var(--sprite-play);
-}
-@keyframes sprite-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-/* awaiting: the badge nudges, body stays still so it never feels frantic */
-.sprite__badge {
-  transform-origin: 51px 13px;
-  transform-box: view-box;
-  animation: sprite-nudge var(--motion-sprite-attn) ease-in-out infinite;
-  animation-play-state: var(--sprite-play);
-}
-@keyframes sprite-nudge {
-  0%,
-  60%,
-  100% {
-    transform: rotate(0);
-  }
-  68%,
-  84% {
-    transform: rotate(-9deg);
-  }
-  76%,
-  92% {
-    transform: rotate(9deg);
-  }
-}
-
-/* suggestion: a small sprout sways */
-.sprite__sprout {
-  transform-origin: 32px 13px;
-  transform-box: view-box;
-  animation: sprite-sway var(--motion-sprite-suggest) ease-in-out infinite;
-  animation-play-state: var(--sprite-play);
-}
-@keyframes sprite-sway {
-  50% {
-    transform: rotate(7deg);
-  }
-  0%,
-  100% {
-    transform: rotate(-5deg);
-  }
-}
-
-/* dnd: no motion at all */

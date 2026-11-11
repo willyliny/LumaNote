@@ -48,8 +48,16 @@ export function ChatView({ onOpenTasks }: { onOpenTasks: () => void }) {
   useEffect(() => {
     const el = area.current;
     if (!el) return;
+    // Auto-grow: border-box height = content + borders, otherwise a 1-line box is 2px short and shows a
+    // scrollbar. The scrollbar only appears once the cap (about 6 lines) is exceeded.
+    const cs = getComputedStyle(el);
+    const border = parseFloat(cs.borderTopWidth) + parseFloat(cs.borderBottomWidth);
+    const cap = parseFloat(cs.maxHeight) || 160;
     el.style.height = 'auto';
-    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+    el.style.overflowY = 'hidden';
+    const want = el.scrollHeight + border;
+    el.style.height = `${Math.min(want, cap)}px`;
+    el.style.overflowY = want > cap ? 'auto' : 'hidden';
   }, [draft]);
 
   const submit = async () => {
@@ -133,7 +141,7 @@ export function ChatView({ onOpenTasks }: { onOpenTasks: () => void }) {
       >
         {messages.length === 0 ? (
           <div className="chat__empty">
-            <Sprite state="idle" size={72} title="" />
+            <Sprite state="idle" size={96} title="" />
             <h2>{t.chat.emptyTitle}</h2>
             <p>{t.chat.emptyBody}</p>
             <button

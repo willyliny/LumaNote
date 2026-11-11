@@ -132,9 +132,16 @@ ol {
   color: var(--c-text-2);
 }
 .btn--small {
+  position: relative;
   min-height: 28px;
   padding: 0 var(--space-4);
   font-size: var(--text-sm);
+}
+.btn--small::before {
+  /* visual size stays compact; the hit area grows to the 44 px target */
+  content: '';
+  position: absolute;
+  inset: -8px -2px;
 }
 .btn--icon {
   width: var(--size-control);
@@ -173,6 +180,7 @@ ol {
   padding: var(--space-3) var(--space-4);
   line-height: var(--leading-body);
   resize: none;
+  overflow-y: hidden; /* auto-growing fields turn this on only past their cap */
 }
 .input::placeholder,
 .textarea::placeholder {

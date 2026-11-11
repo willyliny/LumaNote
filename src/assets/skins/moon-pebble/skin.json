@@ -1,0 +1,14 @@
+{
+  "id": "moon-pebble",
+  "name": "月環石",
+  "family": "quiet-desk",
+  "preferredTheme": "light",
+  "accent": {
+    "light": "#354F78",
+    "dark": "#BDD2F2"
+  },
+  "onAccent": {
+    "light": "#FFFFFF",
+    "dark": "#142139"
+  }
+}
