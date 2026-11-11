@@ -82,7 +82,7 @@ impl Orchestrator {
             ..ModelRequest::new(
                 model.profile.id.clone(),
                 self.config.chat_instructions.clone(),
-                to_messages(&history, &origin),
+                to_messages(&history, &origin, None),
             )
         };
         let end = self

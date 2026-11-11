@@ -181,6 +181,7 @@ impl Orchestrator {
                                 id: call_id,
                                 name,
                                 arguments,
+                                refusal: None,
                             });
                         }
                     }

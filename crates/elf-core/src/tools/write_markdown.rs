@@ -14,7 +14,7 @@ use super::fsutil::{
 };
 use super::{Tool, ToolContext, ToolOutput};
 use crate::policy::paths::{display_path, path_within, relative_below, resolve_within};
-use crate::policy::{Action, Resource};
+use crate::policy::{Action, ActionClass, Resource};
 use crate::schema::{sha256_hex, ElfError, EvidenceRef, Result, Trust};
 use crate::task::SideEffect;
 
@@ -119,6 +119,10 @@ impl Tool for WriteMarkdownTool {
         Action::Write
     }
 
+    fn action_class(&self) -> ActionClass {
+        ActionClass::LocalWrite
+    }
+
     fn side_effect(&self) -> SideEffect {
         SideEffect::LocalWrite
     }
@@ -146,6 +150,13 @@ impl Tool for WriteMarkdownTool {
             "Create the new Markdown file {target} ({} bytes). An existing file is never overwritten. Starts with: {head:?}",
             content.len()
         )
+    }
+
+    fn preview_detail(&self, args: &Value, _resource: &Resource) -> Option<String> {
+        // the whole document the user is approving
+        args.get("content")
+            .and_then(Value::as_str)
+            .map(str::to_owned)
     }
 
     fn redact_args(&self, args: &Value) -> Value {

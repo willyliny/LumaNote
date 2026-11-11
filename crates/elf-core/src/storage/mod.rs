@@ -23,8 +23,12 @@ pub mod todos;
 #[cfg(test)]
 mod tests;
 
-pub use approvals::{Approval, ApprovalStatus, NewApproval};
-pub use content::{Artifact, Conversation, StoredMessage};
+pub use approvals::{Approval, ApprovalStatus, NewApproval, MAX_APPROVAL_DETAIL_BYTES};
+pub(crate) use content::conversation_tainted_in;
+pub use content::{
+    open_calls, Artifact, CallOutcome, CallOutcomeKind, CallToRun, Conversation, NewMessage,
+    OpenCall, StoredMessage, ToolResultRecord,
+};
 pub use grants::{Grant, GrantScope, NewGrant};
 pub use migrate::{Migration, MIGRATIONS};
 pub use tasks::{NewTask, RecoveredTask, StepOutcome, Task, TaskEvent, TaskStep};

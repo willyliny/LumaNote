@@ -335,10 +335,22 @@ fn apply_transition(
     if let (Some(p), Some(x)) = (payload.as_object_mut(), extra.as_object()) {
         p.extend(x.iter().map(|(k, v)| (k.clone(), v.clone())));
     }
-    // A finished task keeps no live grants: its task-scoped grants end in the same
-    // transaction as the transition, so a crash cannot leave them behind.
-    if to.is_terminal() {
+    // A finished task keeps no live grants: its task-scoped grants (the implied ones and
+    // every one-shot approval) end in the same transaction as the transition, so a crash
+    // cannot leave them behind. An uncertain task cannot run again either.
+    if to.is_terminal() || to == TaskStatus::Uncertain {
         super::grants::revoke_task_scoped(conn, id, now)?;
+        // Tool calls that never got a result belong to this task only: answer them "not
+        // executed" now, so no later task of the conversation can pick them up.
+        let text = match to {
+            TaskStatus::Cancelled => "not executed: the task was cancelled",
+            TaskStatus::Failed => "not executed: the task failed",
+            TaskStatus::Uncertain => {
+                "not executed: the task ended with an uncertain outcome; nothing was repeated"
+            }
+            _ => "not executed: the task had already finished",
+        };
+        super::content::close_unanswered_calls_in(conn, id, text, now)?;
     }
     insert_event(conn, id, "status_changed", &payload, now)
 }
@@ -432,6 +444,21 @@ pub(crate) fn set_step_consumed_grant(
     Ok(())
 }
 
+/// Sets the task's untrusted flag on `conn` (inside the caller's transaction) and records a
+/// `marked_untrusted` event the first time. Returns whether it newly changed.
+pub(crate) fn taint_task_in(conn: &Connection, id: &TaskId, now: Timestamp) -> Result<bool> {
+    let task = load_task(conn, id)?;
+    if task.untrusted_content {
+        return Ok(false);
+    }
+    conn.execute(
+        "UPDATE tasks SET untrusted_content = 1, updated_at = ?2 WHERE id = ?1",
+        params![id.as_str(), ts_to_sql(&now)],
+    )?;
+    insert_event(conn, id, "marked_untrusted", &json!({}), now)?;
+    Ok(true)
+}
+
 impl Store {
     /// Creates a queued task and its first event (`created`, sequence 1).
     pub fn create_task(&mut self, intent: &str, scope: &Value, now: Timestamp) -> Result<Task> {
@@ -461,10 +488,16 @@ impl Store {
         if let Some(parent) = &new.parent_task_id {
             load_task(&tx, parent)?;
         }
+        // The untrusted flag belongs to the conversation: a task that continues a
+        // conversation whose context holds content the user did not type starts flagged.
+        let inherited = match &new.conversation_id {
+            Some(c) => super::content::conversation_tainted_in(&tx, c)?,
+            None => false,
+        };
         tx.execute(
             "INSERT INTO tasks (id, intent, status, scope_json, created_at, updated_at,
-                                limits_json, parent_task_id, conversation_id)
-             VALUES (?1, ?2, 'queued', ?3, ?4, ?4, ?5, ?6, ?7)",
+                                limits_json, parent_task_id, conversation_id, untrusted_content)
+             VALUES (?1, ?2, 'queued', ?3, ?4, ?4, ?5, ?6, ?7, ?8)",
             params![
                 id.as_str(),
                 new.intent,
@@ -472,10 +505,20 @@ impl Store {
                 ts,
                 to_json(&limits)?,
                 new.parent_task_id.as_ref().map(TaskId::as_str),
-                new.conversation_id.as_ref().map(ConversationId::as_str)
+                new.conversation_id.as_ref().map(ConversationId::as_str),
+                i64::from(inherited)
             ],
         )?;
         insert_event(&tx, &id, "created", &json!({"status": "queued"}), now)?;
+        if inherited {
+            insert_event(
+                &tx,
+                &id,
+                "marked_untrusted",
+                &json!({"inherited_from_conversation": true}),
+                now,
+            )?;
+        }
         tx.commit()?;
         self.get_task(&id)
     }
@@ -508,11 +551,25 @@ impl Store {
         reason: Option<&str>,
         clock: &dyn Clock,
     ) -> Result<TaskEvent> {
+        self.transition_task_with(id, to, evidence, reason, json!({}), clock)
+    }
+
+    /// Like [`Store::transition_task`], adding the fields of the JSON object `extra` to the
+    /// `status_changed` event payload (for example the list of unresolved items).
+    pub fn transition_task_with(
+        &mut self,
+        id: &TaskId,
+        to: TaskStatus,
+        evidence: &[EvidenceRef],
+        reason: Option<&str>,
+        extra: Value,
+        clock: &dyn Clock,
+    ) -> Result<TaskEvent> {
         let now = clock.now_utc();
         let tx = self
             .conn
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        match apply_transition(&tx, id, to, evidence, reason, json!({}), now) {
+        match apply_transition(&tx, id, to, evidence, reason, extra, now) {
             Ok(ev) => {
                 tx.commit()?;
                 Ok(ev)
@@ -546,30 +603,23 @@ impl Store {
         let tx = self
             .conn
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let task = load_task(&tx, id)?;
-        if task.untrusted_content {
-            return Ok(false);
-        }
-        tx.execute(
-            "UPDATE tasks SET untrusted_content = 1, updated_at = ?2 WHERE id = ?1",
-            params![id.as_str(), ts_to_sql(&now)],
-        )?;
-        insert_event(&tx, id, "marked_untrusted", &json!({}), now)?;
+        let changed = taint_task_in(&tx, id, now)?;
         tx.commit()?;
-        Ok(true)
+        Ok(changed)
     }
 
-    /// Notes the trust level of a tool result; `External` sets the untrusted flag.
+    /// Notes the trust level of a tool result: anything the user did not type themselves
+    /// (`local_granted` as well as `external`; handbook 8.1) sets the untrusted flag.
     pub fn record_tool_result_trust(
         &mut self,
         id: &TaskId,
         trust: Trust,
         now: Timestamp,
     ) -> Result<bool> {
-        if trust == Trust::External {
-            self.mark_task_untrusted(id, now)
-        } else {
+        if trust == Trust::UserProvided {
             Ok(false)
+        } else {
+            self.mark_task_untrusted(id, now)
         }
     }
 
@@ -649,6 +699,16 @@ impl Store {
                 result.map(to_json).transpose()?
             ],
         )?;
+        // A saved result whose content the user did not type taints the task in the same
+        // transaction that saves it (handbook 8.1): there is no window in which the result
+        // exists, and may be replayed into the context, while the flag is not yet set.
+        let content_is_untrusted = result
+            .and_then(|v| v.get("trust"))
+            .and_then(Value::as_str)
+            .is_some_and(|t| t != Trust::UserProvided.as_str());
+        if content_is_untrusted {
+            taint_task_in(&tx, &step.task_id, now)?;
+        }
         tx.commit()?;
         self.get_step(step_id)
     }

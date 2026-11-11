@@ -47,6 +47,7 @@ impl Env {
             max_uses: None,
             source_task: None,
             scope: GrantScope::UserStanding,
+            tool: None,
         }
     }
     fn add(&mut self, g: NewGrant) -> crate::storage::Grant {
@@ -56,12 +57,7 @@ impl Env {
         self.root.join("granted").display().to_string()
     }
     fn req(&self, action: Action, resource: Resource, hash: &str) -> ActionRequest {
-        ActionRequest {
-            task_id: self.task.clone(),
-            action,
-            resource,
-            arguments_hash: hash.into(),
-        }
+        ActionRequest::new(self.task.clone(), action, resource, hash)
     }
     fn check(&mut self, r: &ActionRequest) -> Decision {
         evaluate(&mut self.store, r, &self.clock).unwrap()
@@ -147,9 +143,14 @@ fn symlink_escape_is_denied_even_with_a_matching_grant() {
         assert!(matches!(e.check(&r), Decision::Deny { .. }), "{rel}");
     }
     assert_eq!(e.store.get_grant(&g.id).unwrap().used_count, 0);
-    // scope given through a symlinked alias still works for honest paths
+    // A path that is only granted through a symlinked alias is NOT lexically covered by
+    // the grant on `granted`: it is not resolved to find out, it simply needs approval.
     symlink(e.root.join("granted"), e.root.join("alias")).unwrap();
     let r = e.req(Action::Read, e.path("alias/a.txt"), "h");
+    assert!(matches!(e.check(&r), Decision::NeedsApproval { .. }));
+    // a scope given through the alias still works for honest paths
+    let g2 = e.grant("read", &e.root.join("alias").display().to_string());
+    e.add(g2);
     assert!(matches!(e.check(&r), Decision::Allow { .. }));
 }
 
@@ -218,16 +219,15 @@ fn arguments_hash_must_match_exactly() {
     let mut e = env();
     let approved = hash_arguments(&json!({"to": "a@x.com", "body": "hi"}));
     let changed = hash_arguments(&json!({"to": "a@x.com", "body": "hi, plus a link"}));
-    let mut g = e.grant("send", "mail:a@x.com");
-    g.arguments_hash = Some(approved.clone());
-    g.max_uses = Some(1);
-    e.add(g);
+    let task = e.task.clone();
+    e.one_shot(&task, "send", "mail:a@x.com", &approved);
     let mail = Resource::Other("mail:a@x.com".into());
     let r = e.req(Action::Send, mail.clone(), &changed);
+    // a send is confirmed every time: changed arguments never ride on the approval
     assert_eq!(
         e.check(&r),
         Decision::NeedsApproval {
-            reason: ApprovalReason::NoMatchingGrant
+            reason: ApprovalReason::ConfirmEveryUse
         }
     );
     let r = e.req(Action::Send, mail, &approved);
@@ -286,10 +286,21 @@ fn untrusted_flag_overrides_standing_grants_for_send_delete_and_out_of_scope_wri
     let send = e.req(Action::Send, Resource::Other("mail:boss@x.com".into()), "h");
     let read = e.req(Action::Read, e.path("granted/a.txt"), "h");
 
-    // before the flag: standing grants apply
-    for r in [&in_scope_write, &out_scope_write, &delete, &send, &read] {
+    // before the flag: standing grants apply to reads and writes; a delete or a send never
+    // accepts a standing grant (one approval per use, taint or not)
+    for r in [&in_scope_write, &out_scope_write, &read] {
         assert!(
             matches!(e.check(r), Decision::Allow { .. }),
+            "{:?}",
+            r.action
+        );
+    }
+    for r in [&delete, &send] {
+        assert_eq!(
+            e.check(r),
+            Decision::NeedsApproval {
+                reason: ApprovalReason::ConfirmEveryUse
+            },
             "{:?}",
             r.action
         );
@@ -374,6 +385,7 @@ fn untrusted_task_accepts_only_its_own_one_shot_approval() {
         max_uses: Some(1),
         source_task: Some(e.task.clone()),
         scope: GrantScope::Task,
+        tool: Some("send".into()),
         ..e.grant("send", "mail:boss@x.com")
     };
     let g = e.add(one_shot);
@@ -392,15 +404,25 @@ fn untrusted_task_accepts_only_its_own_one_shot_approval() {
 }
 
 #[test]
-fn trusted_sources_do_not_set_the_flag() {
+fn only_content_the_user_typed_leaves_the_flag_unset() {
     let mut e = env();
-    let g = e.grant("send", "mail:*");
+    let g = e.grant("write", &e.granted());
     e.add(g);
+    let outside_out = e.req(Action::Write, e.path("granted/a.txt"), "h");
+    e.store
+        .record_tool_result_trust(&e.task.clone(), Trust::UserProvided, e.clock.now_utc())
+        .unwrap();
+    assert!(matches!(e.check(&outside_out), Decision::Allow { .. }));
+    // a local file the user shared is still not something the user typed (handbook 8.1)
     e.store
         .record_tool_result_trust(&e.task.clone(), Trust::LocalGranted, e.clock.now_utc())
         .unwrap();
-    let send = e.req(Action::Send, Resource::Other("mail:x@y.z".into()), "h");
-    assert!(matches!(e.check(&send), Decision::Allow { .. }));
+    assert_eq!(
+        e.check(&outside_out),
+        Decision::NeedsApproval {
+            reason: ApprovalReason::UntrustedContent
+        }
+    );
 }
 
 #[test]
@@ -414,7 +436,10 @@ fn unknown_task_is_invalid_input_and_helpers_work() {
     ));
     assert_eq!(Action::parse("read"), Action::Read);
     assert_eq!(Action::parse("calendar.create").as_str(), "calendar.create");
-    assert_eq!(Action::Other("x".into()).class(), ActionClass::Other);
+    assert_eq!(
+        Action::Other("x".into()).class(),
+        ActionClass::ExternalWrite
+    );
     let _keep = &e.dir;
 }
 
@@ -436,18 +461,14 @@ impl Env {
         resource: Resource,
         hash: &str,
     ) -> ActionRequest {
-        ActionRequest {
-            task_id: task.clone(),
-            action,
-            resource,
-            arguments_hash: hash.into(),
-        }
+        ActionRequest::new(task.clone(), action, resource, hash)
     }
     /// A task-scoped grant, as the orchestrator creates for a task.
     fn task_grant(&mut self, task: &TaskId, action: &str, scope: &str) -> crate::storage::Grant {
         let g = NewGrant {
             source_task: Some(task.clone()),
             scope: GrantScope::Task,
+            tool: Some(action.into()),
             ..self.grant(action, scope)
         };
         self.add(g)
@@ -464,6 +485,7 @@ impl Env {
             max_uses: Some(1),
             source_task: Some(task.clone()),
             scope: GrantScope::Task,
+            tool: Some(action.into()),
             ..self.grant(action, scope)
         };
         self.add(g)
@@ -540,7 +562,12 @@ fn a_one_shot_approval_for_one_task_cannot_be_spent_by_another() {
     let mail = || Resource::Other("mail:boss@x.com".into());
 
     let rb = e.for_task(&b, Action::Send, mail(), &h);
-    assert_eq!(e.check(&rb), NEEDS);
+    assert_eq!(
+        e.check(&rb),
+        Decision::NeedsApproval {
+            reason: ApprovalReason::ConfirmEveryUse
+        }
+    );
     assert_eq!(
         e.store.get_grant(&g.id).unwrap().used_count,
         0,
@@ -563,7 +590,13 @@ fn a_one_shot_approval_for_one_task_cannot_be_spent_by_another() {
             grant_id: g.id.clone()
         }
     );
-    assert_eq!(e.check(&ra), NEEDS, "spent after one use");
+    assert_eq!(
+        e.check(&ra),
+        Decision::NeedsApproval {
+            reason: ApprovalReason::ConfirmEveryUse
+        },
+        "spent after one use"
+    );
 }
 
 #[test]
@@ -600,16 +633,17 @@ fn user_standing_grants_serve_every_task() {
 fn untrusted_content_rule_overrides_standing_grants_for_that_task_only() {
     let mut e = env();
     let (a, b) = (e.task.clone(), e.new_task("b_out"));
-    let g = e.grant("send", "mail:*");
+    let g = e.grant("write", &e.granted());
     e.add(g);
     e.store.mark_task_untrusted(&b, e.clock.now_utc()).unwrap();
-    let mail = || Resource::Other("mail:boss@x.com".into());
+    let target = e.path("granted/a.txt");
+    let mail = || target.clone();
     assert!(matches!(
-        e.check(&e.for_task(&a, Action::Send, mail(), "h")),
+        e.check(&e.for_task(&a, Action::Write, mail(), "h")),
         Decision::Allow { .. }
     ));
     assert_eq!(
-        e.check(&e.for_task(&b, Action::Send, mail(), "h")),
+        e.check(&e.for_task(&b, Action::Write, mail(), "h")),
         Decision::NeedsApproval {
             reason: ApprovalReason::UntrustedContent
         }
@@ -651,10 +685,14 @@ fn task_scoped_grant_needs_a_source_task_and_an_approval_cannot_create_a_standin
                 tool: "t".into(),
                 action: "write".into(),
                 resource: "r".into(),
+                resolved_resource: None,
                 arguments: json!({}),
                 arguments_hash: "h".into(),
                 preview: "p".into(),
+                detail: None,
+                detail_truncated: false,
                 reason: "no_matching_grant".into(),
+                expires_at: e.clock.now_utc() + chrono::Duration::minutes(10),
             },
             e.clock.now_utc(),
         )
@@ -765,7 +803,7 @@ fn crash_before_the_step_record_commits_leaves_the_approval_unspent() {
     // both live in the same uncommitted transaction, which a crash rolls back.
     {
         let tx = e.store.conn.transaction().unwrap();
-        let d = super::evaluate_in(&tx, &r, e.clock.now_utc()).unwrap();
+        let d = super::evaluate_in(&tx, &r, e.clock.now_utc(), &super::OsFs).unwrap();
         assert!(matches!(d, Decision::Allow { .. }));
         drop(tx); // crash
     }
@@ -838,12 +876,7 @@ fn crash_after_commit_external_write_is_uncertain_and_the_approval_stays_spent()
     }
     assert_eq!(used(&e, &g.id), 1);
     // even with a fresh, unlimited grant in place the uncertain external step is not re-run
-    let standing = NewGrant {
-        source_task: Some(e.task.clone()),
-        scope: GrantScope::Task,
-        ..e.grant("send", "mail:*")
-    };
-    let standing = e.add(standing);
+    let standing = e.one_shot(&a, "send", "mail:boss@x.com", "h");
     let again = StepStart {
         reopen: Some(&step.id),
         ..start("mail:h", SideEffect::ExternalWrite)
@@ -1124,4 +1157,239 @@ fn arguments_hash_number_rule() {
         hash_arguments(&v),
         crate::schema::sha256_hex(v.to_string().as_bytes())
     );
+}
+
+// ---------------------------------------------------------------------------------------
+// H3: no file-system access for a path nothing grants; Windows path forms (security review)
+
+use std::sync::Mutex;
+
+/// A file system that records every call policy makes to it.
+#[derive(Debug)]
+struct SpyFs {
+    windows: bool,
+    calls: Mutex<Vec<String>>,
+}
+
+impl SpyFs {
+    fn new(windows: bool) -> Self {
+        Self {
+            windows,
+            calls: Mutex::new(Vec::new()),
+        }
+    }
+    fn calls(&self) -> Vec<String> {
+        self.calls.lock().unwrap().clone()
+    }
+}
+
+impl paths::FsPort for SpyFs {
+    fn windows_rules(&self) -> bool {
+        self.windows
+    }
+    fn canonicalize(&self, path: &std::path::Path) -> std::io::Result<PathBuf> {
+        self.calls
+            .lock()
+            .unwrap()
+            .push(format!("canonicalize {}", path.display()));
+        fs::canonicalize(path)
+    }
+    fn exists_no_follow(&self, path: &std::path::Path) -> bool {
+        self.calls
+            .lock()
+            .unwrap()
+            .push(format!("metadata {}", path.display()));
+        fs::symlink_metadata(path).is_ok()
+    }
+}
+
+fn check_with(e: &mut Env, fs: &SpyFs, r: &ActionRequest) -> Decision {
+    evaluate_with(&mut e.store, r, &e.clock, fs).unwrap()
+}
+
+/// Reviewer repro R4 (H3), inverted: a path that no grant covers used to be looked at
+/// (three `statx` calls in the reviewer's strace; on Windows an SMB connection) before the
+/// decision. Now the decision is made without touching the file system at all.
+#[test]
+fn review_r4_policy_never_touches_the_fs_for_a_path_no_grant_covers() {
+    let mut e = env();
+    let spy = SpyFs::new(false);
+    // with no grant at all
+    let probe = Resource::Path(PathBuf::from("/review-probe-SECRET-DATA-IN-NAME/share/x"));
+    let r = e.req(Action::Read, probe.clone(), "h");
+    assert_eq!(
+        check_with(&mut e, &spy, &r),
+        Decision::NeedsApproval {
+            reason: ApprovalReason::NoMatchingGrant
+        }
+    );
+    assert!(spy.calls().is_empty(), "{:?}", spy.calls());
+
+    // with a grant that covers a DIFFERENT directory
+    let g = e.grant("read", &e.granted());
+    e.add(g);
+    for p in [
+        "/review-probe-SECRET-DATA-IN-NAME/share/x".to_owned(),
+        e.root
+            .join("granted-but-not-really/x")
+            .display()
+            .to_string(), // prefix lookalike
+        e.root.join("elsewhere/x").display().to_string(),
+    ] {
+        let r = e.req(Action::Read, Resource::Path(PathBuf::from(&p)), "h");
+        assert!(
+            matches!(check_with(&mut e, &spy, &r), Decision::NeedsApproval { .. }),
+            "{p}"
+        );
+    }
+    assert!(spy.calls().is_empty(), "{:?}", spy.calls());
+
+    // a path the grant does cover is the only one that may be resolved, and only under
+    // the granted root
+    let r = e.req(Action::Read, e.path("granted/a.txt"), "h");
+    assert!(matches!(
+        check_with(&mut e, &spy, &r),
+        Decision::Allow { .. }
+    ));
+    let calls = spy.calls();
+    assert!(!calls.is_empty());
+    let granted = e.granted();
+    assert!(
+        calls.iter().all(|c| c.contains(&granted)),
+        "only the granted tree was touched: {calls:?}"
+    );
+}
+
+/// The same holds for writes and for the untrusted-content rule: a tainted task asking
+/// for an out-of-scope path is not resolved to find out whether it is out of scope.
+#[test]
+fn a_tainted_task_asking_for_an_uncovered_path_causes_no_fs_access() {
+    let mut e = env();
+    let spy = SpyFs::new(false);
+    e.store
+        .mark_task_untrusted(&e.task.clone(), e.clock.now_utc())
+        .unwrap();
+    let r = e.req(
+        Action::Write,
+        Resource::Path(PathBuf::from("/nowhere-special/out.md")),
+        "h",
+    );
+    assert_eq!(
+        check_with(&mut e, &spy, &r),
+        Decision::NeedsApproval {
+            reason: ApprovalReason::UntrustedContent
+        }
+    );
+    assert!(spy.calls().is_empty(), "{:?}", spy.calls());
+}
+
+/// Every Windows form that can reach the network, a device or a stream is refused by the
+/// lexical check alone: no grant is consulted and the file system is never touched.
+#[test]
+fn windows_path_forms_are_denied_lexically_without_touching_the_fs() {
+    let mut e = env();
+    // even a grant that names the very same string cannot make these acceptable
+    let spy = SpyFs::new(true);
+    let forms = [
+        r"\\server\share\x.txt",
+        "//server/share/x.txt",
+        r"\\.\pipe\secret",
+        r"\\.\C:\x.txt",
+        r"\\?\GLOBALROOT\Device\HarddiskVolume1\x",
+        r"\\?\UNC\server\share\x.txt",
+        r"\\?\Volume{01234567-89ab-cdef-0123-456789abcdef}\x",
+        r"C:foo.txt",
+        r"C:",
+        r"\Users\x.txt",
+        r"C:\Users\u\x.txt:hidden",
+        r"C:\Users\u\x.txt::$DATA",
+        "C:\\Users\\u\\x\0.txt",
+        r"C:\Users\u\NUL",
+        r"C:\Users\u\con.txt",
+        r"C:\Users\u\COM1",
+        r"C:\Users\u\..\..\Windows\x",
+        r"C:\Users\u\x?.txt",
+        r"C:\Users\u\ ..\x",
+        r"\\?\C:/Users/u/x.txt", // '/' is a literal inside a verbatim path
+    ];
+    for form in forms {
+        for action in [Action::Read, Action::Write] {
+            // the form itself is also granted, as a standing grant
+            let g = e.grant(action.as_str(), form);
+            e.add(g);
+            let r = e.req(action.clone(), Resource::Path(PathBuf::from(form)), "h");
+            let d = check_with(&mut e, &spy, &r);
+            assert!(
+                matches!(d, Decision::Deny { .. }),
+                "{form:?} {action:?} gave {d:?}"
+            );
+        }
+    }
+    assert!(spy.calls().is_empty(), "{:?}", spy.calls());
+}
+
+/// An ordinary Windows path that nothing grants asks for approval, again without any fs
+/// call (the host here is not Windows, so a call would be visible in the spy).
+#[test]
+fn an_ungranted_windows_drive_path_needs_approval_without_fs_access() {
+    let mut e = env();
+    let spy = SpyFs::new(true);
+    let g = e.grant("read", r"C:\Users\u\docs");
+    e.add(g);
+    for p in [
+        r"D:\other\x.txt",
+        r"C:\Users\u\docs2\x.txt",
+        r"C:\Users\v\x.txt",
+    ] {
+        let r = e.req(Action::Read, Resource::Path(PathBuf::from(p)), "h");
+        assert!(
+            matches!(check_with(&mut e, &spy, &r), Decision::NeedsApproval { .. }),
+            "{p}"
+        );
+    }
+    assert!(spy.calls().is_empty(), "{:?}", spy.calls());
+}
+
+/// Review item: the wildcard `example.test*` must not cover `example.test.evil.com`
+/// (the host prefix is not pinned). Exact regression, plus the shapes around it.
+#[test]
+fn a_bare_host_prefix_wildcard_never_covers_a_longer_host() {
+    let m = other_scope_matches;
+    assert!(!m("example.test*", "example.test.evil.com"));
+    assert!(!m("example.test*", "example.test"));
+    assert!(!m("example.test*", "example.testing"));
+    assert!(!m("example.test-*", "example.test-evil.com"));
+    assert!(!m(
+        "https://example.test*",
+        "https://example.test.evil.com/x"
+    ));
+    assert!(!m("https://example.test*", "https://example.test/x"));
+    // the documented spellings
+    assert!(m("example.test", "example.test"));
+    assert!(!m("example.test", "example.test.evil.com"));
+    assert!(m("https://example.test/*", "https://example.test/x"));
+    assert!(!m(
+        "https://example.test/*",
+        "https://example.test.evil.com/x"
+    ));
+    assert!(!m(
+        "https://example.test/*",
+        "https://example.test@evil.com/x"
+    ));
+
+    // and through the policy: a grant with that scope authorises nothing
+    let mut e = env();
+    let g = e.grant("web_fetch", "example.test*");
+    e.add(g);
+    for host in ["example.test.evil.com", "example.test"] {
+        let r = e.req(
+            Action::Other("web_fetch".into()),
+            Resource::Other(host.into()),
+            "h",
+        );
+        assert!(
+            matches!(e.check(&r), Decision::NeedsApproval { .. }),
+            "{host}"
+        );
+    }
 }

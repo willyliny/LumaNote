@@ -9,9 +9,27 @@
 //!   A task whose run ends without any tool call is treated as misrouted conversation and
 //!   finishes `failed` (`conversation_only`); one whose tools left no evidence finishes
 //!   `failed` (`no_evidence`). Only evidence moves a task to `completed`.
-//! * **Evidence.** Artifacts of the task that still exist unchanged on disk, plus steps
-//!   that succeeded. Read-only steps count (14: "工具結果或成果證據"), so "read this file and
-//!   tell me X" can complete; the evidence proves that tools ran, not that the answer is right.
+//! * **Evidence (handbook 8.1).** Artifacts of the task that still exist unchanged on disk,
+//!   plus steps that succeeded *and have a write side effect*. A succeeded read proves that
+//!   something was read, not that anything the user asked for was done, so it is no
+//!   evidence: a task that only read fails with `no_evidence`.
+//! * **Unresolved writes.** If the model attempted a write that was denied, expired,
+//!   rejected or failed and no later successful call of the same tool for the same target
+//!   made up for it, the task ends `failed` (`unresolved_writes: ...`), never `completed`,
+//!   however much else succeeded. The state machine has no "completed with errors" state
+//!   and none was added; the final `task_progress` event carries the list
+//!   ([`UnresolvedItem`]) so the UI can show exactly what did not happen, and the
+//!   artifacts that were produced stay where they are.
+//! * **Unanswered calls belong to their task.** A call without a result is only ever run by
+//!   the task whose model turn made it. When a task is cancelled, fails, becomes uncertain
+//!   or completes, every call it left unanswered gets a stored "not executed" error result
+//!   in the same transaction as the transition, and history rebuilding drops (and closes)
+//!   any such call it still finds, so a later task in the same conversation can neither run
+//!   it nor send it to the provider.
+//! * **Untrusted content is a property of the conversation.** Anything the model reads that
+//!   the user did not type (external content and local files alike) marks the conversation
+//!   (`messages.trust`, set in the transaction that stores the tool result); a task that
+//!   continues the conversation starts flagged.
 //! * **Turns.** A model turn is persisted only when it completes. Tool calls run after the
 //!   turn ends, one by one, so a failed stream never leaves an executed-but-unrecorded call.
 //! * **Resume = replay from storage.** Everything needed to continue (assistant message,
@@ -28,12 +46,13 @@ mod events;
 mod history;
 mod run;
 mod turn;
+mod unresolved;
 
 #[cfg(test)]
 mod tests;
 
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -41,7 +60,7 @@ use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
 use crate::model::{MessagePart, ModelAdapter, ModelProfile, ReasoningConfig, Role};
-use crate::policy::paths::resolve_target;
+use crate::policy::paths::{lexical_check, FsPort, OsFs};
 use crate::ports::Clock;
 use crate::schema::{ApprovalId, ConversationId, ElfError, Result, TaskId};
 use crate::storage::grants::{GrantScope, NewGrant};
@@ -52,7 +71,8 @@ use crate::tools::{Ports, Registry, TaskScope};
 
 pub use chat::ChatReply;
 pub use events::{
-    AgentEvent, AgentEventKind, EventSink, NullSink, RecordingSink, EVENT_SCHEMA_VERSION,
+    AgentEvent, AgentEventKind, EventSink, NullSink, RecordingSink, UnresolvedItem,
+    EVENT_SCHEMA_VERSION,
 };
 pub use run::{PauseReason, RunOutcome};
 
@@ -78,6 +98,14 @@ pub struct OrchestratorConfig {
     pub parallel_tool_calls: Option<bool>,
     /// Reasoning settings passed to the model (`None` = provider default).
     pub reasoning: Option<ReasoningConfig>,
+    /// How long a one-shot approval request and the grant it creates stay valid, on the
+    /// injected clock (handbook 8.1: 10 minutes).
+    pub approval_ttl: Duration,
+    /// Most tool calls accepted from one model turn; the rest are answered as errors.
+    pub max_calls_per_turn: usize,
+    /// Most bytes of arguments accepted for one tool call; a larger call is answered as an
+    /// error and its arguments are not stored.
+    pub max_call_argument_bytes: usize,
 }
 
 impl Default for OrchestratorConfig {
@@ -102,6 +130,9 @@ impl Default for OrchestratorConfig {
             max_retry_wait: Duration::from_secs(120),
             parallel_tool_calls: None,
             reasoning: None,
+            approval_ttl: Duration::from_secs(600),
+            max_calls_per_turn: 16,
+            max_call_argument_bytes: 2 * 1024 * 1024,
         }
     }
 }
@@ -153,6 +184,8 @@ pub struct Orchestrator {
     pub(crate) registry: Arc<Registry>,
     pub(crate) sink: Arc<dyn EventSink>,
     pub(crate) config: OrchestratorConfig,
+    /// File-system access of policy decisions and approval previews (injectable).
+    pub(crate) fs: Arc<dyn FsPort>,
     active: Arc<Mutex<HashMap<TaskId, CancellationToken>>>,
 }
 
@@ -160,25 +193,22 @@ fn truncate_chars(s: &str, max: usize) -> String {
     s.chars().take(max).collect()
 }
 
-/// The directory or file a one-shot approval grant is scoped to: the path itself if it
-/// exists, otherwise its nearest existing ancestor (policy needs an existing scope).
-fn approval_scope(resource: &str) -> String {
-    let path = Path::new(resource);
-    if !path.is_absolute() {
-        return resource.to_owned();
+/// The scope of the one-shot grant an approval creates. A path resource is scoped to the
+/// lexically normalised path as the user was shown it (no file-system access: the path was
+/// validated lexically, and the policy engine resolves it when the approval is used and
+/// refuses it if it then points somewhere else); anything else is scoped to itself.
+fn approval_scope(resource: &str, fs: &dyn FsPort) -> Result<String> {
+    let looks_like_path = Path::new(resource).is_absolute()
+        || (fs.windows_rules() && crate::tools::fsutil::looks_absolute(resource));
+    if !looks_like_path {
+        return Ok(resource.to_owned());
     }
-    let mut probe: PathBuf = path.to_path_buf();
-    loop {
-        if std::fs::symlink_metadata(&probe).is_ok() {
-            return resolve_target(&probe)
-                .unwrap_or(probe)
-                .display()
-                .to_string();
-        }
-        if !probe.pop() {
-            return resource.to_owned();
-        }
-    }
+    lexical_check(Path::new(resource), fs.windows_rules())
+        .map(|p| p.display().to_string())
+        .map_err(|why| ElfError::NoPermission {
+            action: "approve".into(),
+            resource: why,
+        })
 }
 
 impl Orchestrator {
@@ -197,8 +227,17 @@ impl Orchestrator {
             registry,
             sink,
             config,
+            fs: Arc::new(OsFs),
             active: Arc::default(),
         }
+    }
+
+    /// Replaces the file-system port used by policy decisions and approval previews
+    /// (tests inject a spy; the default is the real file system with the host's rules).
+    #[must_use]
+    pub fn with_fs(mut self, fs: Arc<dyn FsPort>) -> Self {
+        self.fs = fs;
+        self
     }
 
     /// The shared database handle.
@@ -320,6 +359,7 @@ impl Orchestrator {
                         source_task: Some(task.id.clone()),
                         // implied by this task's hand-over: usable by this task only
                         scope: GrantScope::Task,
+                        tool: None,
                     },
                     now,
                 )
@@ -341,17 +381,40 @@ impl Orchestrator {
             AgentEventKind::TaskProgress {
                 status: TaskStatus::Queued,
                 message: "task created".into(),
+                unresolved: Vec::new(),
             },
         );
         Ok(task)
     }
 
     /// Records the user's answer to a pending approval. Approving creates a one-shot grant
-    /// bound to the exact arguments and task; denying makes the next run tell the model
+    /// bound to the tool, the target and the exact arguments, scoped to this task and valid
+    /// for [`OrchestratorConfig::approval_ttl`]; denying makes the next run tell the model
     /// that the user refused. The task stays `awaiting_user` until [`Orchestrator::run`]
     /// is called again.
+    ///
+    /// A request that was not answered before it expired can no longer be answered: it is
+    /// recorded as `expired` and this returns an error; the next run tells the model that
+    /// the call was not approved (expired).
     pub fn respond_to_approval(&self, approval_id: &ApprovalId, approve: bool) -> Result<Approval> {
         let now = self.clock.now_utc();
+        let expires = chrono::Duration::from_std(self.config.approval_ttl)
+            .ok()
+            .and_then(|d| now.checked_add_signed(d));
+        // A request whose time has run out is expired (and announced) before anything else:
+        // it can no longer be approved.
+        let pending = self.store.with(|s| s.get_approval(approval_id))?;
+        let lapsed = self
+            .store
+            .with(|s| s.expire_due_approvals(Some(&pending.task_id), now))?;
+        for a in &lapsed {
+            self.emit_approval_expired(a);
+        }
+        if lapsed.iter().any(|a| a.id == *approval_id) {
+            return Err(ElfError::invalid_input(format!(
+                "approval {approval_id} expired before it was answered"
+            )));
+        }
         let resolved = self.store.with(|s| {
             let approval = s.get_approval(approval_id)?;
             let task = s.get_task(&approval.task_id)?;
@@ -361,15 +424,20 @@ impl Orchestrator {
                     task.id, task.status
                 )));
             }
-            let grant = approve.then(|| NewGrant {
-                action: approval.action.clone(),
-                resource_scope: approval_scope(&approval.resource),
-                arguments_hash: Some(approval.arguments_hash.clone()),
-                expires_at: None,
-                max_uses: Some(1),
-                source_task: Some(approval.task_id.clone()),
-                scope: GrantScope::Task,
-            });
+            let grant = if approve {
+                Some(NewGrant {
+                    action: approval.action.clone(),
+                    resource_scope: approval_scope(&approval.resource, self.fs.as_ref())?,
+                    arguments_hash: Some(approval.arguments_hash.clone()),
+                    expires_at: expires,
+                    max_uses: Some(1),
+                    source_task: Some(approval.task_id.clone()),
+                    scope: GrantScope::Task,
+                    tool: Some(approval.tool.clone()),
+                })
+            } else {
+                None
+            };
             let resolved = s.resolve_approval(approval_id, grant.as_ref(), now)?;
             s.append_task_event(
                 &resolved.task_id,
@@ -384,6 +452,38 @@ impl Orchestrator {
             Ok(resolved)
         })?;
         Ok(resolved)
+    }
+
+    /// Marks every pending approval whose time has run out as expired (all tasks) and emits
+    /// [`AgentEventKind::ApprovalExpired`] for each. The shell calls this from a timer; a
+    /// run of the task does the same for its own approvals. Nothing is approved: the
+    /// waiting call is answered to the model as "not approved (expired)" when the task is
+    /// run again.
+    pub fn expire_stale_approvals(&self) -> Result<Vec<Approval>> {
+        let now = self.clock.now_utc();
+        let expired = self.store.with(|s| s.expire_due_approvals(None, now))?;
+        for a in &expired {
+            self.emit_approval_expired(a);
+        }
+        Ok(expired)
+    }
+
+    pub(crate) fn emit_approval_expired(&self, a: &Approval) {
+        let conv = self
+            .store
+            .with(|s| Ok(s.get_task(&a.task_id)?.conversation_id))
+            .ok()
+            .flatten();
+        self.emit(
+            Some(&a.task_id),
+            conv.as_ref(),
+            None,
+            AgentEventKind::ApprovalExpired {
+                approval_id: a.id.clone(),
+                tool_call_id: a.tool_call_id.clone(),
+                tool: a.tool.clone(),
+            },
+        );
     }
 
     /// Cancels a task from any non-terminal state. A task that is being run stops its

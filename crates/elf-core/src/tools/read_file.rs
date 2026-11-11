@@ -1,8 +1,10 @@
 //! `read_file`: reads a text file inside a directory granted to the task.
 //!
-//! Containment is decided by the policy engine (`read` grants, symlink and traversal
-//! checks in [`crate::policy::paths`]); the tool re-resolves the path itself and refuses
-//! anything that is not an absolute, `..`-free path to a regular file.
+//! Containment is decided by the policy engine: lexical validation (UNC, device and
+//! drive-relative paths, alternate data streams, reserved names and `..` are refused before
+//! the file system is touched), `read` grants, then symlink checks in
+//! [`crate::policy::paths`]. After authorisation the tool validates the path lexically
+//! again and re-resolves it itself; it refuses anything that is not a regular file.
 
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -11,10 +13,10 @@ use std::time::Duration;
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
-use super::fsutil::decode_text;
+use super::fsutil::{decode_text, looks_absolute};
 use super::{Tool, ToolContext, ToolOutput};
-use crate::policy::paths::{display_path, resolve_target};
-use crate::policy::{Action, Resource};
+use crate::policy::paths::{display_path, lexical_check, resolve_target};
+use crate::policy::{Action, ActionClass, Resource};
 use crate::schema::{ElfError, Result, Trust};
 use crate::task::SideEffect;
 
@@ -71,6 +73,10 @@ impl Tool for ReadFileTool {
         Action::Read
     }
 
+    fn action_class(&self) -> ActionClass {
+        ActionClass::Read
+    }
+
     fn side_effect(&self) -> SideEffect {
         SideEffect::None
     }
@@ -86,14 +92,16 @@ impl Tool for ReadFileTool {
 
     fn resource(&self, args: &Value, ctx: &ToolContext) -> Result<Resource> {
         let raw = path_arg(args)?;
-        if raw.starts_with(r"\\.\") || raw.to_ascii_uppercase().starts_with(r"\\?\GLOBALROOT") {
+        // `\\host\share`, `\\.\device`, `\\?\...`: never a file the user shared. (The policy
+        // engine applies the full Windows path rules; this is the early, readable refusal.)
+        if raw.starts_with(r"\\") {
             return Err(ElfError::NoPermission {
                 action: "read".into(),
-                resource: format!("{raw} (device paths cannot be read)"),
+                resource: format!("{raw} (UNC, network and device paths cannot be read)"),
             });
         }
         let p = PathBuf::from(raw);
-        if !p.is_absolute() {
+        if !looks_absolute(raw) {
             let dirs: Vec<String> = ctx
                 .scope
                 .read_dirs
@@ -131,6 +139,11 @@ impl Tool for ReadFileTool {
                 usize::try_from(n).unwrap_or(self.hard_cap)
             })
             .clamp(1, self.hard_cap);
+        // authorised already, but the tool never trusts that blindly: same lexical rules
+        lexical_check(Path::new(raw), cfg!(windows)).map_err(|why| ElfError::NoPermission {
+            action: "read".into(),
+            resource: format!("{raw} ({why})"),
+        })?;
         let real = resolve_target(Path::new(raw)).map_err(|why| ElfError::NoPermission {
             action: "read".into(),
             resource: format!("{raw} ({why})"),

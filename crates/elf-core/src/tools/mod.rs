@@ -11,7 +11,7 @@ use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
 use crate::model::ToolSpec;
-use crate::policy::{Action, Resource};
+use crate::policy::{Action, ActionClass, Resource};
 use crate::ports::{Clock, CredentialStore, HttpTransport, Notifier};
 use crate::schema::{ElfError, EvidenceRef, Result, TaskId, Timestamp, Trust};
 use crate::storage::SharedStore;
@@ -104,8 +104,22 @@ pub trait Tool: Send + Sync {
     fn parameters_schema(&self) -> Value;
     /// The permission action the policy engine must grant.
     fn required_action(&self) -> Action;
+    /// How strictly policy must treat this tool (read, local record, local write,
+    /// external write, send, publish, payment, delete). There is deliberately **no
+    /// default**: a tool cannot be written, or registered, without declaring its class. An
+    /// unclassified action would count as an external write
+    /// ([`crate::policy::Action::class`]). [`Registry::register`] checks the declaration
+    /// against [`Tool::required_action`] and [`Tool::side_effect`].
+    fn action_class(&self) -> ActionClass;
     /// Side-effect class, recorded in the write-ahead step.
     fn side_effect(&self) -> SideEffect;
+    /// Trust of the text of an error this tool returns. Errors of a tool that talks to the
+    /// outside may carry third-party text (an HTTP body, a server message), so such a tool
+    /// returns [`Trust::External`] here. The default is [`Trust::UserProvided`]: the
+    /// message was written by this application.
+    fn error_trust(&self) -> Trust {
+        Trust::UserProvided
+    }
     /// Longest the tool may run before the orchestrator gives up on it.
     fn timeout(&self) -> Duration;
     /// Largest result handed to the model; longer output is cut and flagged.
@@ -119,8 +133,15 @@ pub trait Tool: Send + Sync {
     /// engine will check. An error means the target is unusable (it is returned to the
     /// model; nothing runs).
     fn resource(&self, args: &Value, ctx: &ToolContext) -> Result<Resource>;
-    /// Concrete description of what will happen, shown when the user is asked to approve.
+    /// Short description of what will happen, shown when the user is asked to approve.
+    /// `resource` is the real location when it could be determined.
     fn preview(&self, args: &Value, resource: &Resource) -> String;
+    /// The full payload the user is approving (for example the whole document). `None`
+    /// means: show the complete arguments as pretty-printed JSON. The orchestrator caps the
+    /// size and marks a cut visibly.
+    fn preview_detail(&self, _args: &Value, _resource: &Resource) -> Option<String> {
+        None
+    }
     /// Arguments as stored in `task_steps.args_redacted`. The default shortens long strings.
     fn redact_args(&self, args: &Value) -> Value {
         shorten_strings(args, 200)
@@ -158,6 +179,42 @@ pub struct Registry {
     planned: BTreeSet<String>,
 }
 
+/// Checks that a tool's declared [`ActionClass`] is consistent with its action and side
+/// effect: the class may not be weaker than the class of a built-in action it uses
+/// (`write` is at least a local write, `send` is a send, ...); a read has no side effect,
+/// local classes write locally, external classes write externally; delete may be either.
+pub fn check_class(tool: &dyn Tool) -> std::result::Result<(), String> {
+    let class = tool.action_class();
+    let action = tool.required_action();
+    if !matches!(action, Action::Other(_)) && class.rank() < action.class().rank() {
+        return Err(format!(
+            "declares class {} but its action {} is at least {}",
+            class.as_str(),
+            action.as_str(),
+            action.class().as_str()
+        ));
+    }
+    let side = tool.side_effect();
+    let ok = match class {
+        ActionClass::Read => side == SideEffect::None,
+        ActionClass::LocalRecord | ActionClass::LocalWrite => side == SideEffect::LocalWrite,
+        ActionClass::ExternalWrite
+        | ActionClass::Send
+        | ActionClass::Publish
+        | ActionClass::Payment => side == SideEffect::ExternalWrite,
+        ActionClass::Delete => side != SideEffect::None,
+    };
+    if ok {
+        Ok(())
+    } else {
+        Err(format!(
+            "declares class {} which does not fit side effect {}",
+            class.as_str(),
+            side.as_str()
+        ))
+    }
+}
+
 fn valid_tool_name(n: &str) -> bool {
     let mut chars = n.chars();
     n.len() <= 64
@@ -182,8 +239,9 @@ impl Registry {
         Ok(r)
     }
 
-    /// Adds a tool, compiling its argument schema. Duplicate names, bad names and
-    /// invalid schemas are errors. Unimplemented tools are refused: declare them with
+    /// Adds a tool, compiling its argument schema. Duplicate names, bad names, invalid
+    /// schemas and a declared class that contradicts the tool's action or side effect
+    /// (see [`check_class`]) are errors. Unimplemented tools are refused: declare them with
     /// [`Registry::declare_planned`] instead.
     pub fn register(&mut self, tool: Arc<dyn Tool>) -> Result<()> {
         let name = tool.name().to_owned();
@@ -202,6 +260,8 @@ impl Registry {
                 "tool {name} is not implemented; declare it as planned instead"
             )));
         }
+        check_class(tool.as_ref())
+            .map_err(|why| ElfError::invalid_input(format!("tool {name}: {why}")))?;
         let validator = ArgsValidator::compile(&tool.parameters_schema())
             .map_err(|e| ElfError::invalid_input(format!("tool {name}: {e}")))?;
         self.entries.insert(name, Entry { tool, validator });
@@ -247,12 +307,15 @@ impl Registry {
     }
 
     /// The tools to show the model for a task: implemented, allowed by the task's scope,
-    /// and covered by at least one active grant for the tool's action (so the model is
-    /// never offered something that policy would refuse outright). This only filters
-    /// what is *offered*; every call is still checked by the policy engine.
+    /// and either covered by at least one active grant *that applies to this task* (so the
+    /// model is never offered something that policy would refuse outright) or of a class
+    /// that is confirmed on every use anyway (send, publish, payment, delete: no grant can
+    /// ever cover them, the user is asked each time). This only filters what is *offered*;
+    /// every call is still checked by the policy engine.
     pub fn specs_for_task(
         &self,
         store: &SharedStore,
+        task_id: &TaskId,
         scope: &TaskScope,
         now: Timestamp,
     ) -> Result<Vec<ToolSpec>> {
@@ -262,7 +325,9 @@ impl Registry {
                 continue;
             }
             let action = e.tool.required_action();
-            if !store.with(|s| s.has_active_grant_for_action(action.as_str(), now))? {
+            if !e.tool.action_class().always_one_shot()
+                && !store.with(|s| s.has_active_grant_for_task(action.as_str(), task_id, now))?
+            {
                 continue;
             }
             out.push(ToolSpec {

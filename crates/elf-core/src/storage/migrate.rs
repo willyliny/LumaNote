@@ -33,6 +33,11 @@ pub const MIGRATIONS: &[Migration] = &[
         name: "policy_schedules",
         sql: include_str!("../../migrations/0003_policy_schedules.sql"),
     },
+    Migration {
+        version: 4,
+        name: "security_review",
+        sql: include_str!("../../migrations/0004_security_review.sql"),
+    },
 ];
 
 fn table_exists(conn: &Connection, name: &str) -> Result<bool> {

@@ -55,6 +55,7 @@ fn env() -> Env {
                         max_uses: None,
                         source_task: None,
                         scope: GrantScope::UserStanding,
+                        tool: None,
                     },
                     now,
                 )?;
@@ -87,12 +88,14 @@ impl Env {
     }
     fn policy(&self, tool: &dyn Tool, args: &Value) -> Result<Decision> {
         let resource = tool.resource(args, &self.ctx())?;
-        let req = ActionRequest {
-            task_id: self.task.clone(),
-            action: tool.required_action(),
+        let mut req = ActionRequest::new(
+            self.task.clone(),
+            tool.required_action(),
             resource,
-            arguments_hash: hash_arguments(args),
-        };
+            hash_arguments(args),
+        );
+        req.tool = tool.name().to_owned();
+        req.class = tool.action_class();
         self.store.with(|s| evaluate(s, &req, &self.clock))
     }
 }
@@ -129,6 +132,9 @@ fn registry_validates_schemas_names_and_duplicates() {
         }
         fn required_action(&self) -> Action {
             Action::Read
+        }
+        fn action_class(&self) -> crate::policy::ActionClass {
+            crate::policy::ActionClass::Read
         }
         fn side_effect(&self) -> SideEffect {
             SideEffect::None
@@ -187,7 +193,7 @@ fn only_implemented_permitted_tools_are_exposed() {
     let r = Registry::with_builtin_tools().unwrap();
     let now = e.clock.now_utc();
     let names = |scope: &TaskScope| -> Vec<String> {
-        r.specs_for_task(&e.store, scope, now)
+        r.specs_for_task(&e.store, &e.task, scope, now)
             .unwrap()
             .into_iter()
             .map(|t| t.name)
@@ -206,6 +212,7 @@ fn only_implemented_permitted_tools_are_exposed() {
                     max_uses: None,
                     source_task: None,
                     scope: GrantScope::UserStanding,
+                    tool: None,
                 },
                 now,
             )
@@ -234,7 +241,7 @@ fn only_implemented_permitted_tools_are_exposed() {
         .unwrap();
     assert_eq!(names(&e.scope), vec!["create_todos", "write_markdown"]);
     // the specs carry real JSON Schemas
-    let specs = r.specs_for_task(&e.store, &e.scope, now).unwrap();
+    let specs = r.specs_for_task(&e.store, &e.task, &e.scope, now).unwrap();
     assert!(specs.iter().all(|s| s.parameters_schema["type"] == "object"
         && s.parameters_schema["additionalProperties"] == false));
 }
@@ -778,5 +785,173 @@ mod windows {
         // device names are not regular files
         let dev = json!({"path": e.shared.join("CON").display().to_string()});
         assert!(t.execute(dev, e.ctx()).await.is_err());
+    }
+}
+
+// ----- review items ----------------------------------------------------------------------
+
+/// Low item: a crash after the rows were inserted but before the step was marked done makes
+/// the re-run call `create_todos` again with the same idempotency key; no duplicates.
+#[tokio::test]
+async fn create_todos_is_idempotent_across_a_re_run() {
+    let e = env();
+    let args = json!({"todos": [{"title": "a"}, {"title": "b"}]});
+    let first = CreateTodosTool
+        .execute(args.clone(), e.ctx())
+        .await
+        .unwrap();
+    let again = CreateTodosTool
+        .execute(args.clone(), e.ctx())
+        .await
+        .unwrap();
+    assert_eq!(first.content, again.content);
+    let todos = e.store.with(|s| s.list_todos(Some(&e.task))).unwrap();
+    assert_eq!(
+        todos.iter().map(|t| t.title.as_str()).collect::<Vec<_>>(),
+        vec!["a", "b"]
+    );
+    // a different call (another key) is a different request and adds its rows
+    let mut other = e.ctx();
+    other.idempotency_key = "k2".into();
+    CreateTodosTool.execute(args, other).await.unwrap();
+    assert_eq!(
+        e.store.with(|s| s.list_todos(Some(&e.task))).unwrap().len(),
+        4
+    );
+}
+
+/// Low item: `specs_for_task` offers a tool for a task only if a grant that applies to THAT
+/// task exists; another task's one-shot or task-scoped grant does not make it visible.
+#[test]
+fn specs_for_task_considers_only_grants_that_apply_to_the_requesting_task() {
+    let e = env();
+    let r = Registry::with_builtin_tools().unwrap();
+    let now = e.clock.now_utc();
+    // no standing grants at all
+    for g in e.store.with(|s| s.list_grants()).unwrap() {
+        e.store
+            .with(|s| s.revoke_grant(&g.id, now).map(|_| ()))
+            .unwrap();
+    }
+    let other = e
+        .store
+        .with(|s| s.create_task("other", &e.scope.to_json(), now))
+        .unwrap()
+        .id;
+    e.store
+        .with(|s| {
+            s.insert_grant(
+                &NewGrant {
+                    action: "read".into(),
+                    resource_scope: e.shared.display().to_string(),
+                    arguments_hash: None,
+                    expires_at: None,
+                    max_uses: None,
+                    source_task: Some(e.task.clone()),
+                    scope: GrantScope::Task,
+                    tool: None,
+                },
+                now,
+            )
+            .map(|_| ())
+        })
+        .unwrap();
+    let names = |t: &TaskId| -> Vec<String> {
+        r.specs_for_task(&e.store, t, &e.scope, now)
+            .unwrap()
+            .into_iter()
+            .map(|s| s.name)
+            .collect()
+    };
+    assert_eq!(names(&e.task), vec!["read_file"]);
+    assert!(names(&other).is_empty(), "{:?}", names(&other));
+}
+
+/// Registering a tool requires an explicit class that fits its action and side effect.
+#[test]
+fn registration_rejects_a_class_that_does_not_fit_the_tool() {
+    use crate::policy::ActionClass as C;
+    struct Classed(&'static str, Action, SideEffect, C);
+    #[async_trait::async_trait]
+    impl Tool for Classed {
+        fn name(&self) -> &str {
+            self.0
+        }
+        fn description(&self) -> &str {
+            ""
+        }
+        fn parameters_schema(&self) -> Value {
+            json!({"type": "object"})
+        }
+        fn required_action(&self) -> Action {
+            self.1.clone()
+        }
+        fn action_class(&self) -> C {
+            self.3
+        }
+        fn side_effect(&self) -> SideEffect {
+            self.2
+        }
+        fn timeout(&self) -> Duration {
+            Duration::from_secs(1)
+        }
+        fn max_output_bytes(&self) -> usize {
+            10
+        }
+        fn resource(&self, _: &Value, _: &ToolContext) -> Result<Resource> {
+            Ok(Resource::Other("x".into()))
+        }
+        fn preview(&self, _: &Value, _: &Resource) -> String {
+            String::new()
+        }
+        async fn execute(&self, _: Value, _: ToolContext) -> Result<ToolOutput> {
+            Err(ElfError::Cancelled)
+        }
+    }
+    let mut r = Registry::with_builtin_tools().unwrap();
+    // a send declared as a read, a write declared read-only, an external write that claims
+    // to be local, a read with a side effect: all refused
+    for (name, action, side, class) in [
+        ("t1", Action::Send, SideEffect::ExternalWrite, C::Read),
+        ("t2", Action::Write, SideEffect::LocalWrite, C::Read),
+        (
+            "t3",
+            Action::Other("sms".into()),
+            SideEffect::ExternalWrite,
+            C::LocalRecord,
+        ),
+        (
+            "t4",
+            Action::Other("x".into()),
+            SideEffect::LocalWrite,
+            C::Read,
+        ),
+        ("t5", Action::Other("x".into()), SideEffect::None, C::Send),
+    ] {
+        assert!(
+            r.register(Arc::new(Classed(name, action, side, class)))
+                .is_err(),
+            "{name}"
+        );
+    }
+    // honest declarations are accepted
+    for (name, action, side, class) in [
+        ("ok1", Action::Send, SideEffect::ExternalWrite, C::Send),
+        (
+            "ok2",
+            Action::Other("sms".into()),
+            SideEffect::ExternalWrite,
+            C::ExternalWrite,
+        ),
+        (
+            "ok3",
+            Action::Other("note".into()),
+            SideEffect::LocalWrite,
+            C::LocalRecord,
+        ),
+        ("ok4", Action::Delete, SideEffect::LocalWrite, C::Delete),
+    ] {
+        r.register(Arc::new(Classed(name, action, side, class)))
+            .unwrap_or_else(|e| panic!("{name}: {e}"));
     }
 }

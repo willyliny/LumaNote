@@ -125,8 +125,11 @@ async fn provider_state_is_persisted_in_order_and_replayed_to_the_same_origin_on
     other.provider = "elsewhere".into();
     let conv = h.task_row(&id).conversation_id.unwrap();
     let history = h.orch.store().with(|s| s.list_messages(&conv)).unwrap();
-    let rebuilt =
-        super::history::to_messages(&history, &crate::model::ModelOrigin::from_profile(&other));
+    let rebuilt = super::history::to_messages(
+        &history,
+        &crate::model::ModelOrigin::from_profile(&other),
+        None,
+    );
     let flat = serde_json::to_string(&rebuilt).unwrap();
     assert!(!flat.contains("mock.thinking"), "{flat}");
     assert!(flat.contains("working"), "the visible text still travels");
@@ -768,6 +771,7 @@ async fn switching_provider_at_a_step_boundary_drops_provider_state_and_reruns_n
         super::history::to_messages(
             &hist,
             &crate::model::ModelOrigin::from_profile(&chat_profile()),
+            None,
         )
     })
     .iter()

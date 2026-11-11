@@ -21,7 +21,8 @@ str_enum!(
         Approved => "approved",
         /// The user said no.
         Denied => "denied",
-        /// Withdrawn without an answer (task cancelled).
+        /// Withdrawn without an answer: the task was cancelled, or the request was not
+        /// answered before it expired.
         Expired => "expired",
     }
 );
@@ -39,21 +40,36 @@ pub struct Approval {
     pub tool: String,
     /// Policy action name (`write`, `send`, ...).
     pub action: String,
-    /// Normalised target the user is asked about.
+    /// Normalised target the user is asked about (for a path: the lexically normalised
+    /// absolute path as requested).
     pub resource: String,
-    /// The exact arguments the approval covers.
+    /// The real location the target resolves to (symlinks and junctions followed), when it
+    /// could be determined without touching the file system outside the folders the user
+    /// shared; `None` otherwise.
+    pub resolved_resource: Option<String>,
+    /// The arguments the approval covers, redacted like `task_steps.args_redacted`. The
+    /// binding to the exact arguments is `arguments_hash`; the full payload for the user
+    /// is `detail`.
     pub arguments: Value,
     /// Hash of those arguments; the one-shot grant is bound to it.
     pub arguments_hash: String,
-    /// Concrete, human-readable description of what will happen.
+    /// Short, human-readable summary of what will happen.
     pub preview: String,
+    /// The full payload the user is approving (for example the whole document to be
+    /// written), cut at [`MAX_APPROVAL_DETAIL_BYTES`] with a visible truncation marker.
+    /// Kept only while the request is pending; cleared once it is answered or expires.
+    pub detail: Option<String>,
+    /// True if `detail` was cut at the size cap.
+    pub detail_truncated: bool,
     /// Why approval is needed (`no_matching_grant` / `untrusted_content`).
     pub reason: String,
     /// Current state.
     pub status: ApprovalStatus,
     /// When the request was created.
     pub created_at: Timestamp,
-    /// When the user answered.
+    /// The request lapses at this instant (injected clock); it can no longer be approved.
+    pub expires_at: Option<Timestamp>,
+    /// When the user answered (or when the request was found expired or withdrawn).
     pub responded_at: Option<Timestamp>,
     /// The one-shot grant created by an approval.
     pub grant_id: Option<GrantId>,
@@ -72,19 +88,31 @@ pub struct NewApproval {
     pub action: String,
     /// Normalised target.
     pub resource: String,
-    /// Exact arguments.
+    /// Real location, when known (see [`Approval::resolved_resource`]).
+    pub resolved_resource: Option<String>,
+    /// Redacted arguments (see [`Approval::arguments`]).
     pub arguments: Value,
-    /// Hash of the arguments.
+    /// Hash of the full arguments.
     pub arguments_hash: String,
-    /// Concrete preview.
+    /// Short summary.
     pub preview: String,
+    /// Full payload, already capped.
+    pub detail: Option<String>,
+    /// Whether `detail` was cut.
+    pub detail_truncated: bool,
     /// Reason code.
     pub reason: String,
+    /// When the request lapses.
+    pub expires_at: Timestamp,
 }
+
+/// Largest `detail` kept for an approval; longer payloads are cut and say so.
+pub const MAX_APPROVAL_DETAIL_BYTES: usize = 256 * 1024;
 
 const APPROVAL_COLS: &str =
     "id, task_id, tool_call_id, tool, action, resource, arguments_json, arguments_hash, \
-     preview, reason, status, created_at, responded_at, grant_id";
+     preview, reason, status, created_at, responded_at, grant_id, expires_at, resolved_resource, \
+     detail, detail_truncated";
 
 fn approval_from_row(r: &Row<'_>) -> rusqlite::Result<Approval> {
     let status: String = r.get(10)?;
@@ -103,6 +131,10 @@ fn approval_from_row(r: &Row<'_>) -> rusqlite::Result<Approval> {
         created_at: get_ts(r, 11)?,
         responded_at: get_opt_ts(r, 12)?,
         grant_id: r.get::<_, Option<String>>(13)?.map(GrantId::from_string),
+        expires_at: get_opt_ts(r, 14)?,
+        resolved_resource: r.get(15)?,
+        detail: r.get(16)?,
+        detail_truncated: r.get::<_, i64>(17)? != 0,
     })
 }
 
@@ -112,8 +144,9 @@ impl Store {
         let id = ApprovalId::new();
         self.conn.execute(
             "INSERT INTO approvals (id, task_id, tool_call_id, tool, action, resource, arguments_json,
-                                    arguments_hash, preview, reason, status, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 'pending', ?11)",
+                                    arguments_hash, preview, reason, status, created_at,
+                                    expires_at, resolved_resource, detail, detail_truncated)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 'pending', ?11, ?12, ?13, ?14, ?15)",
             params![
                 id.as_str(),
                 new.task_id.as_str(),
@@ -125,7 +158,11 @@ impl Store {
                 new.arguments_hash,
                 new.preview,
                 new.reason,
-                ts_to_sql(&now)
+                ts_to_sql(&now),
+                ts_to_sql(&new.expires_at),
+                new.resolved_resource,
+                new.detail,
+                i64::from(new.detail_truncated)
             ],
         )?;
         self.get_approval(&id)
@@ -194,6 +231,26 @@ impl Store {
                 "approval {id} is already {current}"
             )));
         }
+        // A request that was not answered in time can no longer be approved (or denied):
+        // it is recorded as expired and the caller gets an error.
+        let due: Option<String> = tx.query_row(
+            "SELECT expires_at FROM approvals WHERE id = ?1",
+            [id.as_str()],
+            |r| r.get(0),
+        )?;
+        if let Some(text) = due {
+            if now >= crate::schema::ts_from_sql(&text)? {
+                tx.execute(
+                    "UPDATE approvals SET status = 'expired', responded_at = ?2, detail = NULL
+                     WHERE id = ?1",
+                    params![id.as_str(), ts_to_sql(&now)],
+                )?;
+                tx.commit()?;
+                return Err(ElfError::invalid_input(format!(
+                    "approval {id} expired before it was answered"
+                )));
+            }
+        }
         let (status, grant_id) = match grant {
             Some(g) => {
                 // An approval answers one task's request: its grant is that task's, never
@@ -211,7 +268,8 @@ impl Store {
             None => (ApprovalStatus::Denied, None),
         };
         tx.execute(
-            "UPDATE approvals SET status = ?2, responded_at = ?3, grant_id = ?4 WHERE id = ?1",
+            "UPDATE approvals SET status = ?2, responded_at = ?3, grant_id = ?4, detail = NULL
+             WHERE id = ?1",
             params![
                 id.as_str(),
                 status.as_str(),
@@ -226,8 +284,45 @@ impl Store {
     /// Withdraws every pending approval of a task (it was cancelled). Returns how many.
     pub fn expire_pending_approvals(&mut self, task_id: &TaskId, now: Timestamp) -> Result<usize> {
         Ok(self.conn.execute(
-            "UPDATE approvals SET status = 'expired', responded_at = ?2 WHERE task_id = ?1 AND status = 'pending'",
+            "UPDATE approvals SET status = 'expired', responded_at = ?2, detail = NULL
+             WHERE task_id = ?1 AND status = 'pending'",
             params![task_id.as_str(), ts_to_sql(&now)],
         )?)
+    }
+
+    /// Marks every pending approval whose expiry has passed as `expired` (all tasks, or
+    /// only `task_id`) and returns them. Nothing is approved or denied by this: the
+    /// waiting call is later answered to the model as "not approved (expired)".
+    pub fn expire_due_approvals(
+        &mut self,
+        task_id: Option<&TaskId>,
+        now: Timestamp,
+    ) -> Result<Vec<Approval>> {
+        let tx = self
+            .conn
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let ids: Vec<String> = {
+            let mut stmt = tx.prepare(
+                "SELECT id FROM approvals
+                 WHERE status = 'pending' AND expires_at IS NOT NULL AND expires_at <= ?1
+                   AND (?2 IS NULL OR task_id = ?2) ORDER BY rowid",
+            )?;
+            let rows = stmt
+                .query_map(params![ts_to_sql(&now), task_id.map(TaskId::as_str)], |r| {
+                    r.get::<_, String>(0)
+                })?;
+            rows.collect::<rusqlite::Result<Vec<_>>>()?
+        };
+        for id in &ids {
+            tx.execute(
+                "UPDATE approvals SET status = 'expired', responded_at = ?2, detail = NULL
+                 WHERE id = ?1",
+                params![id, ts_to_sql(&now)],
+            )?;
+        }
+        tx.commit()?;
+        ids.iter()
+            .map(|id| self.get_approval(&ApprovalId::from_string(id.clone())))
+            .collect()
     }
 }

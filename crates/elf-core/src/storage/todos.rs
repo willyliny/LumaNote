@@ -85,18 +85,51 @@ impl Store {
         todos: &[NewTodo],
         now: Timestamp,
     ) -> Result<Vec<Todo>> {
+        self.insert_todos_keyed(task_id, None, todos, now)
+    }
+
+    /// Like [`Store::insert_todos`], idempotent per `(task, key)`: if todos were already
+    /// stored under this key, they are returned and nothing is inserted. A call that is
+    /// run again after a crash (rows inserted, step not yet finished) therefore never
+    /// creates duplicates. With `key == None` every call inserts.
+    pub fn insert_todos_keyed(
+        &mut self,
+        task_id: &TaskId,
+        key: Option<&str>,
+        todos: &[NewTodo],
+        now: Timestamp,
+    ) -> Result<Vec<Todo>> {
         let tx = self
             .conn
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        if let Some(k) = key {
+            let existing: Vec<String> = {
+                let mut stmt = tx.prepare(
+                    "SELECT id FROM todos WHERE task_id = ?1 AND idempotency_key = ?2
+                     ORDER BY item_index",
+                )?;
+                let rows =
+                    stmt.query_map(params![task_id.as_str(), k], |r| r.get::<_, String>(0))?;
+                rows.collect::<rusqlite::Result<Vec<_>>>()?
+            };
+            if !existing.is_empty() {
+                drop(tx);
+                return existing
+                    .into_iter()
+                    .map(|id| self.get_todo(&TodoId::from_string(id)))
+                    .collect();
+            }
+        }
         let mut ids = Vec::with_capacity(todos.len());
-        for t in todos {
+        for (index, t) in todos.iter().enumerate() {
             if t.title.trim().is_empty() {
                 return Err(ElfError::invalid_input("todo title is empty"));
             }
             let id = TodoId::new();
             tx.execute(
-                "INSERT INTO todos (id, task_id, title, due_at, due_uncertain, due_text, status, source_ref, created_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'open', ?7, ?8)",
+                "INSERT INTO todos (id, task_id, title, due_at, due_uncertain, due_text, status,
+                                    source_ref, created_at, idempotency_key, item_index)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'open', ?7, ?8, ?9, ?10)",
                 params![
                     id.as_str(),
                     task_id.as_str(),
@@ -105,7 +138,9 @@ impl Store {
                     i64::from(t.due_uncertain),
                     t.due_text,
                     t.source_ref,
-                    ts_to_sql(&now)
+                    ts_to_sql(&now),
+                    key,
+                    i64::try_from(index).unwrap_or(i64::MAX)
                 ],
             )?;
             ids.push(id);

@@ -8,7 +8,7 @@ use chrono::DateTime;
 use serde_json::{json, Value};
 
 use super::{Tool, ToolContext, ToolOutput};
-use crate::policy::{Action, Resource};
+use crate::policy::{Action, ActionClass, Resource};
 use crate::schema::{ElfError, Result, Trust};
 use crate::storage::NewTodo;
 use crate::task::SideEffect;
@@ -116,6 +116,10 @@ impl Tool for CreateTodosTool {
         Action::Other(TODOS_ACTION.to_owned())
     }
 
+    fn action_class(&self) -> ActionClass {
+        ActionClass::LocalRecord
+    }
+
     fn side_effect(&self) -> SideEffect {
         SideEffect::LocalWrite
     }
@@ -154,9 +158,11 @@ impl Tool for CreateTodosTool {
             .ok_or_else(|| ElfError::invalid_input("todos must be an array"))?;
         let parsed = items.iter().map(parse_todo).collect::<Result<Vec<_>>>()?;
         let now = ctx.now();
-        let stored = ctx
-            .store
-            .with(|s| s.insert_todos(&ctx.task_id, &parsed, now))?;
+        // Keyed by this call's idempotency key: if the rows were inserted but the step was
+        // never finished (crash), the re-run finds them instead of inserting them again.
+        let stored = ctx.store.with(|s| {
+            s.insert_todos_keyed(&ctx.task_id, Some(&ctx.idempotency_key), &parsed, now)
+        })?;
         // read back: the result only reports what the database actually holds
         let verified = ctx.store.with(|s| {
             stored

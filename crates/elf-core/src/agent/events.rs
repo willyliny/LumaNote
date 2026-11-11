@@ -7,12 +7,28 @@ use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
 
 use crate::model::Usage;
-use crate::schema::{ApprovalId, ConversationId, TaskId, ToolCallId};
+use crate::schema::{ApprovalId, ConversationId, TaskId, Timestamp, ToolCallId};
 use crate::storage::Artifact;
 use crate::task::TaskStatus;
 
 /// Version of the event schema (bump on incompatible changes).
 pub const EVENT_SCHEMA_VERSION: u32 = 1;
+
+/// A write the model attempted that did not happen (denied, failed, expired, rejected)
+/// and that no later successful call made up for. A task with such items never completes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UnresolvedItem {
+    /// Tool the model called.
+    pub tool: String,
+    /// The model's call.
+    pub call_id: ToolCallId,
+    /// Target of the call, when known.
+    pub resource: Option<String>,
+    /// How it ended: `denied`, `expired`, `failed`, `uncertain` or `rejected`.
+    pub outcome: String,
+    /// What the model was told.
+    pub detail: Option<String>,
+}
 
 /// What happened.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -24,6 +40,10 @@ pub enum AgentEventKind {
         status: TaskStatus,
         /// Short human-readable description (e.g. the pause reason).
         message: String,
+        /// On the final `failed` event of a task that attempted writes which did not
+        /// happen: those writes, so the UI can list them. Absent otherwise.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        unresolved: Vec<UnresolvedItem>,
     },
     /// Incremental assistant text.
     AssistantDelta {
@@ -89,10 +109,37 @@ pub enum AgentEventKind {
         tool_call_id: ToolCallId,
         /// Tool name.
         tool: String,
-        /// Concrete description of what would happen.
+        /// Short summary of what would happen (with the real location of a path).
         preview: String,
-        /// Reason code (`no_matching_grant` / `untrusted_content`).
+        /// Reason code (`no_matching_grant` / `untrusted_content` / `confirm_every_use`).
         reason: String,
+        /// The target as requested (normalised absolute path, recipient, URL, ...).
+        #[serde(default)]
+        resource: String,
+        /// The real location the target resolves to, when it could be determined without
+        /// touching the file system outside the folders the user shared.
+        #[serde(default)]
+        resolved_resource: Option<String>,
+        /// The full payload being approved (for example the whole document), capped, with
+        /// a visible marker when cut.
+        #[serde(default)]
+        detail: Option<String>,
+        /// True if `detail` was cut at the size cap.
+        #[serde(default)]
+        detail_truncated: bool,
+        /// The request lapses at this time; after that it can no longer be approved.
+        #[serde(default)]
+        expires_at: Option<Timestamp>,
+    },
+    /// An approval request lapsed without an answer. The waiting call is answered to the
+    /// model as "not approved (expired)" when the task is run again.
+    ApprovalExpired {
+        /// The expired approval.
+        approval_id: ApprovalId,
+        /// The waiting tool call.
+        tool_call_id: ToolCallId,
+        /// Tool name.
+        tool: String,
     },
     /// A tool produced a file or document.
     ArtifactReady {

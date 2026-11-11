@@ -558,17 +558,19 @@ fn recovery_marks_inflight_external_write_uncertain_and_never_reruns() {
 }
 
 #[test]
-fn untrusted_flag_is_sticky_and_only_set_by_external_content() {
+fn untrusted_flag_is_sticky_and_set_by_anything_the_user_did_not_type() {
     let (mut s, c) = mem();
     let t = s.create_task("x", &json!({}), c.now_utc()).unwrap();
     assert!(!s
         .record_tool_result_trust(&t.id, Trust::UserProvided, c.now_utc())
         .unwrap());
-    assert!(!s
+    assert!(!s.get_task(&t.id).unwrap().untrusted_content);
+    // a local file the user shared is not something the user typed: it sets the flag too
+    assert!(s
         .record_tool_result_trust(&t.id, Trust::LocalGranted, c.now_utc())
         .unwrap());
-    assert!(!s.get_task(&t.id).unwrap().untrusted_content);
-    assert!(s
+    assert!(s.get_task(&t.id).unwrap().untrusted_content);
+    assert!(!s
         .record_tool_result_trust(&t.id, Trust::External, c.now_utc())
         .unwrap());
     assert!(!s.mark_task_untrusted(&t.id, c.now_utc()).unwrap());
@@ -649,6 +651,7 @@ fn grants_round_trip_and_revocation_is_idempotent() {
                 max_uses: Some(3),
                 source_task: None,
                 scope: GrantScope::UserStanding,
+                tool: None,
             },
             c.now_utc(),
         )
